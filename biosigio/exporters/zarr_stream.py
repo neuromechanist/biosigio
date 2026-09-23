@@ -19,10 +19,15 @@ This path keeps peak RAM bounded by ~one channel, independent of recording size:
    single sequential pass (a per-channel read of a multiplexed source would instead
    scan the file once per channel).
 3. Pass 2: for each channel, read its full row from the memmap, apply the BIDS
-   unit conversion, resample + quantize it, and write it straight into the Zarr
-   arrays (base row + its slice of each min/max pyramid level). RAM = one channel.
+   unit conversion, resample + quantize it, and write it (base row + its slice of
+   each min/max pyramid level) into output memmaps on scratch. RAM = one channel.
+4. Pass 3: copy the output memmaps into the Zarr arrays in shard- and
+   chunk-aligned blocks, so each shard and chunk is written once and never read
+   back. Writing rows straight into the store instead makes every row a partial
+   write of every shard, which zarr serves by re-encoding the whole shard: n_ch
+   rewrites per shard and gigabytes in flight (issue #129). RAM = one block.
 
-Between the two passes there is nothing to rescale in memory, so the BIDS
+Between passes 1 and 2 there is nothing to rescale in memory, so the BIDS
 ``_channels.tsv`` is applied to the *channel table* instead (``bids_channels``,
 default ``"auto"``, mirroring ``Recording.from_file``): types and modalities move
 immediately, and each declared unit becomes a per-channel factor pass 2 folds in
@@ -45,6 +50,7 @@ in-memory path. Requires both the ``zarr`` and ``meg`` (MNE) extras.
 
 from __future__ import annotations
 
+import contextlib
 import datetime as _dt
 import os
 import tempfile
@@ -75,6 +81,18 @@ if TYPE_CHECKING:
     # Only for the `bids_channels` annotation: a DataFrame is a valid sidecar,
     # but nothing here touches pandas at runtime (biosigio.bids does).
     import pandas as pd
+
+
+def _scratch_array(path: str, dtype, shape: tuple[int, ...]) -> np.ndarray:
+    """A file-backed scratch array for pass 2's output (see ``stream_to_zarr``).
+
+    A memmap keeps the group's quantized output out of the process's anonymous
+    memory: page cache, not heap, and reclaimable under pressure. numpy cannot
+    map a zero-length file, so an empty shape gets a plain (empty) array.
+    """
+    if 0 in shape:
+        return np.zeros(shape, dtype=dtype)
+    return np.memmap(path, dtype=dtype, mode="w+", shape=shape)
 
 
 def _pyramid_level_lengths(
@@ -399,8 +417,10 @@ def stream_to_zarr(
             the level's length). Must be >= 1; see
             :meth:`~biosigio.exporters.zarr.ZarrExporter.export`.
         read_chunk_seconds: Time-window size for the streaming transpose pass.
-        scratch_dir: Directory for the temporary channel-major memmap (defaults to
-            the system temp dir). Point this at fast local scratch.
+        scratch_dir: Directory for the temporary memmaps (defaults to the system
+            temp dir): the float32 channel-major transpose, then pass 2's output
+            (about 1.7x the output dtype's size per sample, base plus pyramid),
+            which replaces it before pass 3. Point this at fast local scratch.
 
     Returns:
         The store path written.
@@ -501,10 +521,9 @@ def stream_to_zarr(
             for li, length in enumerate(level_lengths, start=1):
                 eff = view_downsample**li
                 # Constant column count, not a constant time span: same rule as the
-                # in-memory exporter (see _view_chunk_columns). A wider chunk here
-                # means FEWER, larger read-modify-write cycles in pass 2 for the same
-                # total bytes (each channel still writes its own row of every level),
-                # so it does not cost the bounded-memory guarantee.
+                # in-memory exporter (see _view_chunk_columns). Pass 3 writes each
+                # chunk exactly once, so the width trades request count against
+                # chunk size and never costs memory beyond one chunk.
                 ct = _view_chunk_columns(length, view_chunk_columns)
                 av = view.create_array(
                     str(li),
@@ -515,8 +534,27 @@ def stream_to_zarr(
                 )
                 view_arrays.append((li, eff, ct, av))
 
-            # Pass 2: one channel at a time -- resample, quantize, write the base row
-            # and each pyramid level's row. Peak RAM is a single channel.
+            # Pass 2: one channel at a time -- resample, quantize, build its pyramid.
+            # Peak RAM is a single channel. The results go to scratch memmaps, NOT
+            # straight into the store: a row is a partial write of every level-0
+            # shard (n_ch x shard_t) and every view chunk (2 x n_ch x ct), and zarr
+            # serves a partial write by reading, decoding, re-encoding and
+            # rewriting the whole shard. Row by row, that re-compressed level 0
+            # n_ch times over and held up to async.concurrency shards in memory
+            # per row (issue #129: a 461 MB, 128-channel EDF peaked at +5.1 GB
+            # RSS). Pass 3 below copies the memmaps into the store block by
+            # block, so each shard and chunk is written once and never read.
+            q_mm = _scratch_array(
+                os.path.join(tmp, f"{modality}_{native_rate}.q"), out_np, (n_ch, n_time)
+            )
+            view_mms = [
+                _scratch_array(
+                    os.path.join(tmp, f"{modality}_{native_rate}.v{li}"),
+                    out_np,
+                    (2, n_ch, av.shape[2]),
+                )
+                for li, _eff, _ct, av in view_arrays
+            ]
             scale = np.ones(n_ch, dtype=np.float64)
             offset = np.zeros(n_ch, dtype=np.float64)
             chan_meta = []
@@ -542,13 +580,13 @@ def stream_to_zarr(
                     q, scale[i], offset[i], n_nonfinite = _quantize_int16_channel(y)
                 else:
                     q = y.astype(np.float32)
-                a0[i, :] = q
+                q_mm[i, :] = q
                 if view_arrays:
                     pyramid = _build_minmax_pyramid(
                         q[np.newaxis, :], view_downsample, min_view_samples, max_view_levels
                     )
-                    for (_li, _eff, _ct, av), lvl in zip(view_arrays, pyramid, strict=False):
-                        av[:, i, :] = lvl[:, 0, :]
+                    for vmm, lvl in zip(view_mms, pyramid, strict=False):
+                        vmm[:, i, :] = lvl[:, 0, :]
                 meta = {
                     "label": ci["label"],
                     "channel_type": ctype,
@@ -573,7 +611,25 @@ def stream_to_zarr(
                     meta["bids_unit"] = ci["bids_unit"]
                 chan_meta.append(meta)
                 del x, y, q
-            del mm  # release the memmap before the temp dir is reclaimed
+            # The float32 transpose is spent; drop it (and its scratch file) before
+            # pass 3 so the group's peak scratch is the output, not input + output.
+            del mm
+            with contextlib.suppress(OSError):
+                os.remove(mm_path)
+
+            # Pass 3: whole-shard and whole-chunk writes. Every block below covers
+            # all channels of its column range, so zarr writes it once without
+            # reading anything back. RAM is one block (for level 0,
+            # n_ch x shard_t output samples), independent of n_ch x duration.
+            for s in range(0, n_time, shard_t):
+                e = min(n_time, s + shard_t)
+                a0[:, s:e] = q_mm[:, s:e]
+            for (_li, _eff, ct, av), vmm in zip(view_arrays, view_mms, strict=True):
+                length = av.shape[2]
+                for s in range(0, length, ct):
+                    e = min(length, s + ct)
+                    av[:, :, s:e] = vmm[:, :, s:e]
+            del q_mm, view_mms
 
             grp.attrs.update(
                 {

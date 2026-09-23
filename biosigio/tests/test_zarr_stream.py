@@ -171,6 +171,61 @@ def test_stream_edf_matches_in_memory_export():
                 assert np.max(np.abs(a[i] - b[i])) <= 6 * rng / 65535
 
 
+# Geometry that forces several level-0 shards with an uneven tail and several
+# chunks per view level (issue #129): 200 Hz x 23 s = 4600 samples, 1 s chunks,
+# 4 s shards -> 800-sample shards, the sixth holding only 600.
+_MULTI_SHARD = {"chunk_seconds": 1.0, "shard_seconds": 4.0, "view_chunk_columns": 64}
+
+
+def test_stream_multi_shard_store_matches_the_signal():
+    """#129 moved level 0 and the view levels to block-aligned writes after pass
+    2. Every existing test fits one shard, so this pins the block boundaries: the
+    base still reproduces the signal across all shards (the partial last one
+    included), and each group's view/1 is still the envelope of its own level 0."""
+    with _TmpEDF(rate=200.0, duration_s=23.0, n_ch=5) as path:
+        full, _sfreq = _pyedflib_full_data(path)
+        with tempfile.TemporaryDirectory() as d:
+            store = os.path.join(d, "rec.zarr")
+            stream_to_zarr(path, store, force_modality="EEG", **_MULTI_SHARD)
+            grp = zarr.open_group(store, mode="r")["eeg_200hz"]
+            assert grp["0"].attrs["shard_samples"] == 800
+            assert grp["0"].shape == (5, 4600)
+            deq = _dequant(store, "eeg_200hz")
+            for i in range(full.shape[0]):
+                rng = float(full[i].max() - full[i].min()) or 1.0
+                assert np.max(np.abs(deq[i] - full[i])) <= 2 * rng / 65535
+            assert grp["view"]["1"].shape[2] > 64  # more than one view chunk
+            assert_view1_matches_level0(grp)
+
+
+def test_stream_writes_each_shard_and_view_chunk_once(monkeypatch):
+    """#129: pass 2 used to write level 0 one channel row at a time, and a row is
+    a partial write of every shard, which zarr serves by reading, re-encoding
+    and rewriting the whole shard: n_ch writes per shard (768 for six shards of
+    a 128-channel EDF), gigabytes in flight, level 0 compressed n_ch times over.
+    Every shard and chunk key must now be written exactly once.
+
+    The counter wraps the real ``LocalStore.set`` and still performs the write:
+    it observes the store traffic, it does not replace any of it."""
+    writes: dict[str, int] = {}
+    real_set = zarr.storage.LocalStore.set
+
+    async def counting_set(self, key, value):
+        writes[key] = writes.get(key, 0) + 1
+        return await real_set(self, key, value)
+
+    monkeypatch.setattr(zarr.storage.LocalStore, "set", counting_set)
+    with _TmpEDF(rate=200.0, duration_s=23.0, n_ch=5) as path:
+        with tempfile.TemporaryDirectory() as d:
+            stream_to_zarr(path, os.path.join(d, "rec.zarr"), force_modality="EEG", **_MULTI_SHARD)
+    level0 = {k: n for k, n in writes.items() if "/0/c/" in k}
+    view = {k: n for k, n in writes.items() if "/view/" in k and "/c/" in k}
+    assert len(level0) == 6  # ceil(4600 / 800)
+    assert len(view) > 1
+    rewritten = {k: n for k, n in {**level0, **view}.items() if n != 1}
+    assert rewritten == {}, f"written more than once: {rewritten}"
+
+
 def test_stream_mixed_rate_edf_rejected():
     """#944: a mixed per-channel-rate EDF can't stream on a single grid -> raises
     (same as the importer's default), so it stays on the in-memory resample path."""
