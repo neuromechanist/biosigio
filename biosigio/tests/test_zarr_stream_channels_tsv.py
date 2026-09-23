@@ -603,6 +603,22 @@ def test_a_successful_export_also_closes_the_source(ieeg_in_volts, tmp_path, ope
     assert opened_sources[0].closed
 
 
+def test_a_failure_inside_the_export_closes_the_source(ieeg_in_volts, tmp_path, opened_sources):
+    """Past the sidecar step, the exporter's own passes can raise too (here the
+    scratch directory does not exist); the source is released on that path as
+    well, not left to the garbage collector."""
+    vhdr, _ = ieeg_in_volts
+    with pytest.raises(FileNotFoundError):
+        stream_to_zarr(
+            str(vhdr),
+            str(tmp_path / "never_written.zarr"),
+            force_modality="IEEG",
+            scratch_dir=str(tmp_path / "no-such-scratch"),
+        )
+    assert len(opened_sources) == 1
+    assert opened_sources[0].closed
+
+
 # -- A directory-valued recording (CTF .ds), with and without a trailing slash --
 
 
