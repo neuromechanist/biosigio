@@ -490,7 +490,14 @@ def stream_to_zarr(
     compressors = [BloscCodec(cname="zstd", clevel=compressor_level)]
     written_groups: list[str] = []
 
-    with tempfile.TemporaryDirectory(dir=scratch_dir) as tmp:
+    # `closing`: the source holds an OS file handle (pyedflib) or an MNE reader,
+    # and any pass below can raise. `ignore_cleanup_errors`: on Windows a scratch
+    # file still mapped by a frame of the in-flight exception cannot be deleted,
+    # and that PermissionError must not replace the exception that caused it.
+    with (
+        contextlib.closing(src),
+        tempfile.TemporaryDirectory(dir=scratch_dir, ignore_cleanup_errors=True) as tmp,
+    ):
         for (modality, native_rate), members in groups.items():
             target_rate = _target_rate(native_rate, modality, rates)
             n_ch = len(members)
@@ -740,5 +747,4 @@ def stream_to_zarr(
                 ),
             }
         )
-    src.close()
     return store_path
