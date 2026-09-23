@@ -87,12 +87,19 @@ def _scratch_array(path: str, dtype, shape: tuple[int, ...]) -> np.ndarray:
     """A file-backed scratch array for pass 2's output (see ``stream_to_zarr``).
 
     A memmap keeps the group's quantized output out of the process's anonymous
-    memory: page cache, not heap, and reclaimable under pressure. numpy cannot
-    map a zero-length file, so an empty shape gets a plain (empty) array.
+    memory: page cache, not heap, and reclaimable under pressure.
     """
-    if 0 in shape:
-        return np.zeros(shape, dtype=dtype)
     return np.memmap(path, dtype=dtype, mode="w+", shape=shape)
+
+
+def _discard_scratch(*paths: str) -> None:
+    """Remove scratch files a group is done with, so the next group starts with
+    an empty scratch directory. The caller drops its memmaps first: Windows
+    cannot delete a file that is still mapped. Best-effort, because the
+    enclosing ``TemporaryDirectory`` sweeps up anything left behind."""
+    for path in paths:
+        with contextlib.suppress(OSError):
+            os.remove(path)
 
 
 def _pyramid_level_lengths(
@@ -418,9 +425,11 @@ def stream_to_zarr(
             :meth:`~biosigio.exporters.zarr.ZarrExporter.export`.
         read_chunk_seconds: Time-window size for the streaming transpose pass.
         scratch_dir: Directory for the temporary memmaps (defaults to the system
-            temp dir): the float32 channel-major transpose, then pass 2's output
-            (about 1.7x the output dtype's size per sample, base plus pyramid),
-            which replaces it before pass 3. Point this at fast local scratch.
+            temp dir). Peak use is one group's float32 channel-major transpose
+            plus its pass 2 output (about 1.7x the output dtype's size per
+            sample, base plus pyramid): the transpose is removed before pass 3,
+            and the output once the group is written. Point this at fast local
+            scratch.
 
     Returns:
         The store path written.
@@ -544,16 +553,15 @@ def stream_to_zarr(
             # per row (issue #129: a 461 MB, 128-channel EDF peaked at +5.1 GB
             # RSS). Pass 3 below copies the memmaps into the store block by
             # block, so each shard and chunk is written once and never read.
-            q_mm = _scratch_array(
-                os.path.join(tmp, f"{modality}_{native_rate}.q"), out_np, (n_ch, n_time)
-            )
+            q_path = os.path.join(tmp, f"{modality}_{native_rate}.q")
+            view_paths = [
+                os.path.join(tmp, f"{modality}_{native_rate}.v{li}")
+                for li, _eff, _ct, _av in view_arrays
+            ]
+            q_mm = _scratch_array(q_path, out_np, (n_ch, n_time))
             view_mms = [
-                _scratch_array(
-                    os.path.join(tmp, f"{modality}_{native_rate}.v{li}"),
-                    out_np,
-                    (2, n_ch, av.shape[2]),
-                )
-                for li, _eff, _ct, av in view_arrays
+                _scratch_array(path, out_np, (2, n_ch, av.shape[2]))
+                for path, (_li, _eff, _ct, av) in zip(view_paths, view_arrays, strict=True)
             ]
             scale = np.ones(n_ch, dtype=np.float64)
             offset = np.zeros(n_ch, dtype=np.float64)
@@ -585,8 +593,11 @@ def stream_to_zarr(
                     pyramid = _build_minmax_pyramid(
                         q[np.newaxis, :], view_downsample, min_view_samples, max_view_levels
                     )
-                    for vmm, lvl in zip(view_mms, pyramid, strict=False):
-                        vmm[:, i, :] = lvl[:, 0, :]
+                    # Indexed, not `for vmm in view_mms`: a loop variable would
+                    # keep the last memmap alive past the `del` that releases
+                    # them all before their files are removed.
+                    for k, lvl in enumerate(pyramid[: len(view_mms)]):
+                        view_mms[k][:, i, :] = lvl[:, 0, :]
                 meta = {
                     "label": ci["label"],
                     "channel_type": ctype,
@@ -611,11 +622,11 @@ def stream_to_zarr(
                     meta["bids_unit"] = ci["bids_unit"]
                 chan_meta.append(meta)
                 del x, y, q
-            # The float32 transpose is spent; drop it (and its scratch file) before
-            # pass 3 so the group's peak scratch is the output, not input + output.
+            # The float32 transpose is spent. Both it and the output are fully on
+            # scratch at this point, which is the group's peak; dropping the
+            # transpose here means pass 3 runs with only the output.
             del mm
-            with contextlib.suppress(OSError):
-                os.remove(mm_path)
+            _discard_scratch(mm_path)
 
             # Pass 3: whole-shard and whole-chunk writes. Every block below covers
             # all channels of its column range, so zarr writes it once without
@@ -624,12 +635,13 @@ def stream_to_zarr(
             for s in range(0, n_time, shard_t):
                 e = min(n_time, s + shard_t)
                 a0[:, s:e] = q_mm[:, s:e]
-            for (_li, _eff, ct, av), vmm in zip(view_arrays, view_mms, strict=True):
+            for k, (_li, _eff, ct, av) in enumerate(view_arrays):
                 length = av.shape[2]
                 for s in range(0, length, ct):
                     e = min(length, s + ct)
-                    av[:, :, s:e] = vmm[:, :, s:e]
+                    av[:, :, s:e] = view_mms[k][:, :, s:e]
             del q_mm, view_mms
+            _discard_scratch(q_path, *view_paths)
 
             grp.attrs.update(
                 {

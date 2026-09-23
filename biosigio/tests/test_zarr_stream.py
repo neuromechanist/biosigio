@@ -226,6 +226,41 @@ def test_stream_writes_each_shard_and_view_chunk_once(monkeypatch):
     assert rewritten == {}, f"written more than once: {rewritten}"
 
 
+def test_stream_frees_each_groups_scratch_before_the_next(monkeypatch):
+    """Scratch is bounded by one group, not the sum of all groups: a group's
+    transpose and output memmaps are removed once it is written, not when the
+    whole recording finishes. Observed from inside the run: every write to the
+    second group's arrays sees the first group's scratch already gone.
+
+    The wrapper around ``LocalStore.set`` still performs the real write; it only
+    looks at the scratch directory while the run is in flight."""
+    labels = ["EEG0", "EEG1", "EMG0", "EMG1"]
+    seen_during_emg: list[list[str]] = []
+    real_set = zarr.storage.LocalStore.set
+
+    with tempfile.TemporaryDirectory() as scratch:
+
+        def scratch_files() -> list[str]:
+            return sorted(f for _root, _dirs, files in os.walk(scratch) for f in files)
+
+        async def observing_set(self, key, value):
+            if key.startswith("emg_1000hz/") and "/c/" in key:
+                seen_during_emg.append(scratch_files())
+            return await real_set(self, key, value)
+
+        monkeypatch.setattr(zarr.storage.LocalStore, "set", observing_set)
+        with _TmpEDF(rate=1000.0, duration_s=20.0, n_ch=4, labels=labels) as path:
+            with tempfile.TemporaryDirectory() as d:
+                stream_to_zarr(path, os.path.join(d, "rec.zarr"), scratch_dir=scratch)
+        assert scratch_files() == []
+
+    assert seen_during_emg, "the second group's writes were never observed"
+    leftovers = {f for files in seen_during_emg for f in files if f.lower().startswith("eeg_")}
+    assert leftovers == set(), f"first group's scratch outlived it: {sorted(leftovers)}"
+    # Pass 3 runs without the transpose: only the group's output is on scratch.
+    assert all(not f.endswith(".f32") for files in seen_during_emg for f in files)
+
+
 def test_stream_mixed_rate_edf_rejected():
     """#944: a mixed per-channel-rate EDF can't stream on a single grid -> raises
     (same as the importer's default), so it stays on the in-memory resample path."""
