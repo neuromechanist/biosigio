@@ -41,7 +41,16 @@ _SIBLING_EXTS = {"datafile": (".eeg", ".dat"), "markerfile": (".vmrk",)}
 
 
 def _header_encoding(settings: bytes) -> str:
-    """The codepage MNE decodes a header with (``Codepage=``, else UTF-8; Latin-1 fallback)."""
+    """The codepage MNE decodes a header with (``Codepage=``, else UTF-8; Latin-1 fallback).
+
+    This intentionally mirrors ``mne.io.brainvision._aux_hdr_info`` so the patched
+    copy is decoded by MNE exactly as the original would be. Two known, harmless
+    differences: MNE passes ``re.IGNORECASE & re.MULTILINE`` (which is ``0``), so its
+    search is case-sensitive and its ``"ANSI"`` check exact, where this one ignores
+    case; and MNE lets an unknown codepage raise ``LookupError`` where this falls
+    back to Latin-1. Untouched lines round-trip byte-for-byte under either codec,
+    and an unknown ``Codepage=`` survives into the copy, so MNE still raises on it.
+    """
     match = re.search(r"Codepage=(.+)", settings.decode("ascii", "ignore"), re.IGNORECASE)
     codepage = match.group(1).strip() if match else "utf-8"
     if codepage.upper() == "ANSI":
