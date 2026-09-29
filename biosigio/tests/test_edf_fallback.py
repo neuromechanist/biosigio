@@ -517,7 +517,7 @@ def test_check_not_truncated_direct(tmp_path):
         _check_not_truncated(path, probe, probe.number_of_datarecords)
 
 
-def test_mne_missing_degrades_to_original_error(tmp_path, monkeypatch):
+def test_mne_missing_degrades_to_original_error(tmp_path, monkeypatch, caplog):
     """If MNE (the `meg` extra) is not installed, loading a recoverable file
     must degrade to the SAME error pyedflib itself raised -- not crash with a
     raw ImportError, and not claim success it cannot deliver."""
@@ -534,8 +534,16 @@ def test_mne_missing_degrades_to_original_error(tmp_path, monkeypatch):
     _write_edf(path, channels, data)
     _patch_signal_field(path, 1, "physical_max", b"-100")
 
-    with pytest.raises(CorruptFileError):
-        Recording.from_file(path, importer="edf")
+    with caplog.at_level("WARNING", logger="biosigio.importers.edf"):
+        with pytest.raises(CorruptFileError) as info:
+            Recording.from_file(path, importer="edf")
+
+    # The install hint is not lost: the pyedflib error is chained to the
+    # ImportError, and the log names the missing extra.
+    original = info.value.__cause__
+    assert isinstance(original, OSError)
+    assert isinstance(original.__cause__, ImportError)
+    assert "'meg' extra" in caplog.text and path in caplog.text
 
 
 # --- probe_edf_header -----------------------------------------------------------
