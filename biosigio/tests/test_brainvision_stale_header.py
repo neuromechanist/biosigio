@@ -114,7 +114,9 @@ def test_matching_header_is_read_unchanged(tmp_path):
     [
         ("s13_run2_060717.eeg", "s13_run2_060717.vmrk"),
         ("sub-01_task-MOBA_game_eeg.eeg", "sub-01_task-MOBA_game_eeg.vmrk"),
-        (f"{STEM}.eeg", "sub-01_task-MOBA_game_eeg.vmrk"),  # only the marker is stale
+        # Only the marker is stale. MNE >= 1.13 recovers this itself, so the row
+        # exercises resolved_vhdr's marker patch only on MNE 1.12.x.
+        (f"{STEM}.eeg", "sub-01_task-MOBA_game_eeg.vmrk"),
     ],
 )
 def test_stale_references_resolve_to_same_stem_siblings(tmp_path, data_ref, marker_ref):

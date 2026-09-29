@@ -23,6 +23,10 @@ from .base import BaseImporter
 # ``DataFile=`` / ``MarkerFile=`` lines of the header's [Common Infos] section.
 _FILE_REF = re.compile(r"^(\s*)(DataFile|MarkerFile)(\s*=\s*)(.*?)(\s*)$", re.IGNORECASE)
 # Same-stem siblings tried for each key, in order (``.dat`` is the legacy data name).
+# MarkerFile is patched too: MNE 1.13 recovers a stale MarkerFile= itself, but the
+# 1.12.x line NEMAR runs does not (on002158 fails at ``open(mrk_fname)`` with
+# FileNotFoundError). On MNE >= 1.13 the marker-only test row therefore passes with
+# or without this patch; it proves the patch only on MNE 1.12.
 _SIBLING_EXTS = {"datafile": (".eeg", ".dat"), "markerfile": (".vmrk",)}
 
 
