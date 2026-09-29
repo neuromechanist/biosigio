@@ -274,3 +274,71 @@ def test_path_outside_the_codepage_is_written_as_utf8(tmp_path):
     _assert_loaded(rec, data)
     assert "C1é" in rec.channels
     _assert_streams(vhdr, data)
+
+
+def test_eeg_sibling_wins_over_dat(tmp_path):
+    vhdr, data = _write_triplet(tmp_path, "old.eeg", "old.vmrk")
+    decoy = (data[::-1] // 2).astype(np.int16)  # different values, same shape
+    decoy.T.tofile(tmp_path / f"{STEM}.dat")
+    with resolved_vhdr(vhdr) as used:
+        assert f"DataFile={tmp_path / (STEM + '.eeg')}" in open(used, encoding="utf-8").read()
+    _assert_loaded(Recording.from_file(vhdr), data)
+    _assert_streams(vhdr, data)
+
+
+def test_header_with_utf8_bom(tmp_path):
+    vhdr, data = _write_triplet(tmp_path, "old.eeg", "old.vmrk", encoding="utf-8-sig")
+    original = open(vhdr, "rb").read()
+    assert original.startswith(b"\xef\xbb\xbf")
+    with resolved_vhdr(vhdr) as used:
+        patched = open(used, "rb").read()
+    expected = original.replace(
+        b"DataFile=old.eeg", f"DataFile={tmp_path / (STEM + '.eeg')}".encode()
+    ).replace(b"MarkerFile=old.vmrk", f"MarkerFile={tmp_path / (STEM + '.vmrk')}".encode())
+    assert patched == expected  # the BOM is kept, not doubled or dropped
+    _assert_loaded(Recording.from_file(vhdr), data)
+    _assert_streams(vhdr, data)
+
+
+def test_windows_style_stale_reference(tmp_path):
+    vhdr, data = _write_triplet(tmp_path, r"C:\data\old.eeg", r"C:\data\old.vmrk")
+    _assert_loaded(Recording.from_file(vhdr), data)
+    _assert_streams(vhdr, data)
+
+
+def test_concurrent_calls_use_distinct_temp_copies(tmp_path):
+    """Two threads resolving the same stale header at once each get their own copy,
+    and one leaving does not remove the other's."""
+    import threading
+
+    vhdr, data = _write_triplet(tmp_path, "old.eeg", "old.vmrk")
+    inside = threading.Barrier(2, timeout=30)
+    first_left = threading.Event()
+    used: list[str] = []
+    errors: list[BaseException] = []
+
+    def worker(index: int) -> None:
+        try:
+            with resolved_vhdr(vhdr) as path:
+                used.append(path)
+                inside.wait()  # both copies exist at the same time
+                if index == 1:
+                    assert first_left.wait(timeout=30)
+                    # Thread 0 has removed its copy; this one must be untouched.
+                    assert os.path.isfile(path)
+                    _assert_loaded(Recording.from_file(path), data)
+            if index == 0:
+                assert not os.path.exists(path)
+                first_left.set()
+        except BaseException as e:  # surfaced in the main thread below
+            errors.append(e)
+
+    threads = [threading.Thread(target=worker, args=(i,)) for i in range(2)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join(timeout=60)
+    assert not errors, errors
+    assert len(used) == 2
+    assert os.path.dirname(used[0]) != os.path.dirname(used[1])
+    assert not any(os.path.exists(p) for p in used)
