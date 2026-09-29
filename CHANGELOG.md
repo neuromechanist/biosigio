@@ -54,8 +54,8 @@ which keep the full notes; releases older than 1.1.0 are listed there only.
   now name the channels of one file identically.
 - The tolerant EDF fallback pairs each MNE channel with its header row by position,
   so a file with repeated labels can be recovered too.
-  Each pairing must be the header label itself or MNE's exact rename of it
-  (`<label>-<number>` or `<label>-<a..z>`), so a reordered pair fails loudly.
+  Each pairing must be the header label itself or, for a label the header repeats,
+  MNE's exact rename of it (`<label>-<number>` or `<label>-<a..z>`), so a reordered pair fails loudly.
 - EEGLAB: a v7.3 `.set` whose top-level `chanlocs` or `event` is empty (`[]`)
   loads with default `ChannelN` labels or no events,
   instead of failing because MATLAB stores that empty value as an array rather than a struct group.
