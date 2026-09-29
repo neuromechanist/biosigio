@@ -881,7 +881,16 @@ class Recording:
             modality: Coarse modality ('EEG', 'EMG', 'IEEG', 'MEG', 'BEH', 'MISC').
                 If None, it is inferred from ``channel_type``.
             prefilter: Pre-filtering applied to the channel (keyword-only).
+
+        Raises:
+            ValueError: If a channel with ``label`` already exists; channels are
+                keyed by label, so adding it again would silently replace one.
         """
+        if label in self.channels:
+            raise ValueError(
+                f"Channel {label!r} already exists; channel labels must be unique "
+                "(use set_channel to update an existing channel's metadata)"
+            )
         canonical_type = validate_channel_type(channel_type)
         canonical_modality = (
             infer_modality_from_channel_type(canonical_type)
