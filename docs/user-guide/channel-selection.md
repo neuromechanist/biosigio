@@ -31,6 +31,8 @@ print(f"Original channels: {len(rec.channels)}")
 print(f"Selected channels: {len(subset_emg.channels)}")
 ```
 
+The names can come in any iterable, not only a list:
+a tuple, a set, `rec.channels.keys()`, a numpy array, or a pandas `Index` or `Series`.
 Each name may appear once: `select_channels(['EMG1', 'EMG1'])` raises `ValueError`,
 because a second copy of a column would leave the new recording's signals and channel table disagreeing.
 
