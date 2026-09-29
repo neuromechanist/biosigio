@@ -399,7 +399,7 @@ def test_edf_export_channels_tsv_names_the_written_labels(tmp_path):
 
 def test_edf_export_channels_tsv_keeps_full_label_when_truncation_stays_unique(tmp_path):
     """A long label that stays unique once truncated keeps its full sidecar name, as in 1.2.9."""
-    labels = ["Mini sensor 10: EMG 10", "Long channel name 2 xyz", "Cz"]
+    labels = ["Mini sensor 10: EMG 10", "Long channel label 2", "Cz"]
     rec = TrignoImporter().load(_write_trigno(tmp_path / "long.csv", labels, n_points=300))
 
     rec.to_edf(str(tmp_path / "long.edf"), format="edf")
@@ -407,14 +407,14 @@ def test_edf_export_channels_tsv_keeps_full_label_when_truncation_stays_unique(t
     sidecar = pd.read_csv(tmp_path / "long_channels.tsv", sep="\t")
     assert list(sidecar["name"]) == labels
     back = Recording.from_file(str(tmp_path / "long.edf"), bids_channels="off")
-    assert list(back.channels) == ["Mini sensor 10:", "Long channel nam", "Cz"]
+    assert list(back.channels) == ["Mini sensor 10:", "Long channel lab", "Cz"]
 
 
 def test_edf_export_channels_tsv_renames_only_the_colliding_rows(tmp_path):
     """Colliding rows take the distinct written labels; the rest keep their full labels."""
     labels = [
         "Mini sensor 10: ACC.X 10",
-        "Long channel name 2 xyz",
+        "Long channel label 2",
         "Mini sensor 10: ACC.Y 10",
         "Cz",
     ]
@@ -426,7 +426,7 @@ def test_edf_export_channels_tsv_renames_only_the_colliding_rows(tmp_path):
     sidecar = pd.read_csv(tmp_path / "mix_channels.tsv", sep="\t")
     assert list(sidecar["name"]) == [
         "Mini sensor 10-0",
-        "Long channel name 2 xyz",
+        "Long channel label 2",
         "Mini sensor 10-1",
         "Cz",
     ]
@@ -436,7 +436,7 @@ def test_edf_export_channels_tsv_renames_only_the_colliding_rows(tmp_path):
     back = Recording.from_file(str(tmp_path / "mix.edf"))
     assert list(back.channels) == [
         "Mini sensor 10-0",
-        "Long channel nam",
+        "Long channel lab",
         "Mini sensor 10-1",
         "Cz",
     ]
