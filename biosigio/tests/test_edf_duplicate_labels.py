@@ -125,3 +125,15 @@ def test_stream_store_uses_the_same_suffixed_labels(tmp_path):
     groups = [root[name] for name in root.group_keys() if "channels" in root[name].attrs]
     labels = [c["label"] for g in groups for c in g.attrs["channels"]]  # ty: ignore[not-iterable]
     assert labels == DUP_EXPECTED
+
+
+def test_add_channel_refuses_a_duplicate_label():
+    rec = Recording()
+    rec.add_channel("T8-P8", np.zeros(10), 256, "uV", "EEG")
+
+    with pytest.raises(ValueError, match="'T8-P8' already exists"):
+        rec.add_channel("T8-P8", np.ones(10), 256, "uV", "EEG")
+
+    # The original channel is untouched.
+    assert list(rec.channels) == ["T8-P8"]
+    assert float(rec.signals["T8-P8"].abs().sum()) == 0.0
