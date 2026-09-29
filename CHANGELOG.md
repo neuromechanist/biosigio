@@ -39,6 +39,25 @@ which keep the full notes; releases older than 1.1.0 are listed there only.
   now name the channels of one file identically.
 - The tolerant EDF fallback pairs each MNE channel with its header row by position,
   so a file with repeated labels can be recovered too.
+  Each pairing must be the header label itself or MNE's exact rename of it
+  (`<label>-<number>` or `<label>-<a..z>`), so a reordered pair fails loudly.
+- EEGLAB: a v7.3 `.set` whose top-level `chanlocs` or `event` is empty (`[]`)
+  loads with default `ChannelN` labels or no events,
+  instead of failing because MATLAB stores that empty value as an array rather than a struct group.
+- EEGLAB: a v7.3 file that is valid HDF5 but holds neither EEGLAB layout
+  raises `FileReadError` saying it is not an EEGLAB v7.3 dataset,
+  instead of `CorruptFileError`.
+- Streaming Zarr export of a `.vhdr`: a read failure is typed with `classify_read_error`
+  exactly as the BrainVision importer does, so a corrupt header raises a `FileReadError`
+  (or subclass) instead of a raw MNE exception.
+  On both paths, a message that quoted the temporary header copy names the real `.vhdr` instead.
+- BrainVision: when the same-stem siblings exist but no header encoding can spell their path,
+  the read raises `BrainVisionHeaderRecoveryError` explaining that,
+  instead of reading the stale header and failing on a missing file.
+  It is not a `BiosigIOError`, because the recording itself is readable.
+- WFDB: a record `wfdb` cannot parse (malformed header, truncated or missing signal file,
+  or a repeated signal name that cannot be suffixed) raises a typed `FileReadError`
+  instead of a plain `ValueError`.
 
 ### Changed
 
@@ -52,6 +71,27 @@ which keep the full notes; releases older than 1.1.0 are listed there only.
   (stores published before this release that repeat a label).
 - The EEGLAB importer keeps its own `_2`, `_3` suffix scheme for repeated labels,
   while EDF/BDF, WFDB and Zarr re-import use the MNE-style `-0`, `-1` suffixes above.
+- Renamed channel labels are recorded, not only logged:
+  the recording's metadata gets `channel_labels_deduplicated`, a `{new_label: original_label}` map,
+  from the EDF/BDF importer, the tolerant EDF reader, the streaming EDF source, the WFDB importer and the Zarr importer.
+  Both Zarr export paths write it into the store's `recording_metadata`, so it survives a round trip.
+  `unique_channel_labels` now returns `(labels, renames)` and takes a `filepath` that the warning names.
+- A recovered read leaves a trace:
+  a stale BrainVision header read through its siblings is logged and recorded as
+  `brainvision_header_recovered` (`{"DataFile": {"referenced": ..., "used": ...}, ...}`),
+  on the importer and the streaming export alike,
+  and an EEGLAB `.fdt` read under a name other than the one `EEG.data` gives is recorded as
+  `eeglab_fdt_recovered` (`{"referenced": ..., "used": ...}`).
+  Each key appears only when it applies; a Zarr store without these keys reads exactly as before.
+- BrainVision sibling lookup falls back to a case-insensitive match (`<stem>.EEG`, `<stem>.VMRK`)
+  when exactly one file matches; an upper-case marker file is read through a lower-case temporary copy,
+  because MNE selects its marker reader by the exact `.vmrk` suffix.
+- New warnings replace silent behavior: an EEGLAB v7.3 event dropped for an empty type or latency
+  and a channel given the default label for an empty label are counted,
+  a missing or zero EEGLAB `srate` says that 1000 Hz is assumed,
+  a BrainVision header that cannot be read is logged with its errno,
+  and an EDF/BDF file that only the tolerant reader could open names the missing `meg` extra
+  (the original pyedflib error is now chained to the `ImportError`).
 
 ### Known issues
 
