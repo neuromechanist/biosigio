@@ -20,7 +20,13 @@ A BrainVision recording is a triplet of files that share the same base name (e.g
 - **Marker File (`.vmrk`):** A text file listing time-stamped markers (events) such as stimulus and response triggers, segment boundaries, and recording-control notes.
 - **Binary Data File (`.eeg` or `.dat`):** The actual signal samples in binary form, as specified in the header.
 
-You always pass the **header (`.vhdr`) file** to biosigIO. MNE-Python resolves the sibling `.vmrk` and `.eeg`/`.dat` files automatically from the paths recorded in the header, so the three files must stay together in the same directory.
+You always pass the **header (`.vhdr`) file** to biosigIO. MNE-Python resolves the sibling `.vmrk` and `.eeg`/`.dat` files from the `DataFile=` and `MarkerFile=` entries recorded in the header, so the three files must stay together in the same directory.
+
+### Renamed files and stale header references
+
+Renaming a BrainVision triplet (as BIDS conversion does) changes the file names on disk but not the `DataFile=`/`MarkerFile=` entries inside the header, so the header can name a `.eeg` or `.vmrk` that no longer exists. When a referenced file is missing and a sibling with the header's own stem exists (`<stem>.eeg`, then `<stem>.dat`, for the data; `<stem>.vmrk` for the markers), biosigIO reads a patched temporary copy of the header that points at the sibling. Only those two entries are rewritten; the header's encoding and line endings are kept, and the dataset's own files are never modified. The streaming Zarr export (`stream_to_zarr`) uses the same resolution.
+
+A header whose references all exist is passed to MNE unchanged, and so is one where neither the named file nor a same-stem sibling exists, so that MNE reports the missing file as before.
 
 ## Loading Data
 
