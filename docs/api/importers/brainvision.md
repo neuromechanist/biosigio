@@ -3,6 +3,9 @@
 Imports BrainVision recordings (`.vhdr`, with sibling `.vmrk`/`.eeg`) via
 MNE-Python into a `Recording`. `.vmrk` markers become events. Shares the MNE
 channel-type/unit mapping with the MEG importer. Requires the `meg` extra (MNE).
+A header whose `DataFile=`/`MarkerFile=` names a file that was renamed on disk
+is read through `resolved_vhdr`, which points a temporary header copy at the
+same-stem sibling.
 
 See [MEG & BrainVision](../../formats/brainvision.md) for details.
 
