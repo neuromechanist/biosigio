@@ -226,3 +226,91 @@ def test_tolerant_fallback_keeps_duplicate_labels(tmp_path):
         assert [c["label"] for c in source.channels] == ["EEG-0", "REF", "EEG-1"]
     finally:
         source.close()
+
+
+def test_more_than_26_repeats_use_running_numbers(tmp_path):
+    # The letter fallback only covers a collision; the running number itself
+    # is unbounded, so 30 "-" placeholders become "--0" .. "--29".
+    labels = ["-"] * 30 + ["VNS"]
+    path = os.path.join(tmp_path, "many.edf")
+    data = _write_edf(path, labels, rate=64.0)
+
+    rec = Recording.from_file(path)
+
+    expected = [f"--{i}" for i in range(30)] + ["VNS"]
+    assert list(rec.channels) == expected
+    # Channels past the 26th keep their own data (the writer's +-100 uV range
+    # clips the helper's larger-amplitude channels, so check one inside it).
+    np.testing.assert_allclose(rec.signals["--26"].to_numpy(), data[26], atol=0.01)
+
+
+def test_every_suffix_colliding_raises():
+    # "A-0" and "A-a" .. "A-z" all exist already, so the first "A" has no
+    # free name; refusing beats silently dropping or merging a channel.
+    taken = ["A-0", *(f"A-{c}" for c in "abcdefghijklmnopqrstuvwxyz")]
+    with pytest.raises(ValueError, match="Could not de-duplicate EDF channel label 'A'"):
+        unique_channel_labels(["A", "A", *taken])
+
+
+def test_bdf_duplicate_labels_keep_every_channel(tmp_path):
+    labels = ["T8-P8", "Cz", "T8-P8"]
+    path = os.path.join(tmp_path, "dup.bdf")
+    n = 512
+    t = np.arange(n) / 256.0
+    data = np.vstack([(20.0 + 3 * c) * np.sin(2 * np.pi * (2 + c) * t) for c in range(3)])
+    headers = [
+        {
+            "label": label,
+            "dimension": "uV",
+            "sample_frequency": 256.0,
+            "physical_max": 100.0,
+            "physical_min": -100.0,
+            "digital_max": 8388607,
+            "digital_min": -8388608,
+            "prefilter": "n/a",
+            "transducer": "n/a",
+        }
+        for label in labels
+    ]
+    writer = pyedflib.EdfWriter(path, len(labels), file_type=pyedflib.FILETYPE_BDFPLUS)
+    try:
+        writer.setSignalHeaders(headers)
+        writer.writeSamples(list(data))
+    finally:
+        writer.close()
+
+    rec = Recording.from_file(path)
+
+    assert list(rec.channels) == ["T8-P8-0", "Cz", "T8-P8-1"]
+    np.testing.assert_allclose(rec.signals["T8-P8-0"].to_numpy(), data[0], atol=1e-3)
+    np.testing.assert_allclose(rec.signals["T8-P8-1"].to_numpy(), data[2], atol=1e-3)
+
+
+def test_channels_tsv_on_suffixed_names_applies_in_memory(tmp_path):
+    """An MNE-BIDS sidecar names the repeats ``EEG1-0``/``EEG1-1``; the
+    in-memory importer suffixes the same way, so each row reaches its own
+    channel (the streaming counterpart is in test_zarr_stream_channels_tsv)."""
+    from biosigio.tests.test_bids_channels_units import write_channels_tsv
+
+    stem = "sub-01_task-rest"
+    path = os.path.join(tmp_path, f"{stem}_eeg.edf")
+    data = _write_edf(path, ["EEG1", "EEG1", "Cz"])
+    write_channels_tsv(
+        tmp_path,
+        stem,
+        [("EEG1-0", "EOG", "mV"), ("EEG1-1", "EMG", "uV"), ("Cz", "EEG", "uV")],
+    )
+
+    rec = Recording.from_file(path)
+    ignored = Recording.from_file(path, bids_channels="off")
+
+    assert list(rec.channels) == ["EEG1-0", "EEG1-1", "Cz"]
+    assert rec.channels["EEG1-0"]["channel_type"] == "EOG"
+    assert rec.channels["EEG1-0"]["physical_dimension"] == "mV"
+    assert rec.channels["EEG1-1"]["channel_type"] == "EMG"
+    assert rec.channels["EEG1-1"]["physical_dimension"] == "uV"
+    # The unit change converts only the row it names: uV -> mV is 1e-3.
+    np.testing.assert_allclose(
+        rec.signals["EEG1-0"].to_numpy(), ignored.signals["EEG1-0"].to_numpy() * 1e-3
+    )
+    np.testing.assert_allclose(rec.signals["EEG1-1"].to_numpy(), data[1], atol=0.01)
