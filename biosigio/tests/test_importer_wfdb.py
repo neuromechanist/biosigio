@@ -6,6 +6,7 @@ import pandas as pd
 import pytest
 
 from biosigio.core.emg import Recording
+from biosigio.exceptions import FileReadError
 from biosigio.importers.wfdb import WFDBImporter
 
 # Directory containing the test WFDB files (relative to project root)
@@ -131,9 +132,9 @@ def test_wfdb_load_dat_missing(wfdb_importer, wfdb_data):
     # Remove the .dat file
     os.remove(wfdb_data["dat"])
 
-    with pytest.raises(ValueError) as excinfo:
+    with pytest.raises(FileReadError) as excinfo:
         wfdb_importer.load(str(wfdb_data["hea"]))
-    # Check for the specific ValueError raised when .dat is missing during read
+    # A typed read error (still a ValueError), with the specific message.
     assert "Error reading WFDB record" in str(excinfo.value)
     assert "Data file missing or unreadable" in str(excinfo.value)
 
@@ -186,3 +187,74 @@ def test_wfdb_repeated_sig_name_keeps_every_signal(tmp_path):
 def test_wfdb_unique_sig_names_record_no_renames(wfdb_importer, wfdb_data):
     rec = wfdb_importer.load(wfdb_data["hea"])
     assert "channel_labels_deduplicated" not in rec.metadata
+
+
+def _write_two_signal_record(directory, name="rec"):
+    import numpy as np
+    import wfdb
+
+    wfdb.wrsamp(
+        name,
+        fs=250,
+        units=["mV"] * 2,
+        sig_name=["A", "B"],
+        p_signal=np.random.default_rng(1).normal(size=(500, 2)),
+        fmt=["16"] * 2,
+        write_dir=str(directory),
+    )
+    return directory / f"{name}.hea", directory / f"{name}.dat"
+
+
+@pytest.mark.parametrize(
+    "damage",
+    ["truncated_dat", "empty_header", "unknown_fmt", "syntax"],
+)
+def test_wfdb_malformed_record_is_a_typed_read_error(tmp_path, damage):
+    """wfdb reports a bad file as ValueError, IndexError or KeyError; each one is
+    typed as a (terminal) FileReadError, not left as an untyped ValueError."""
+    hea, dat = _write_two_signal_record(tmp_path)
+    text = hea.read_text()
+    if damage == "truncated_dat":
+        with open(dat, "r+b") as f:
+            f.truncate(100)
+    elif damage == "empty_header":  # wfdb raises IndexError
+        hea.write_text("")
+    elif damage == "unknown_fmt":  # wfdb raises KeyError
+        hea.write_text(text.replace(" 16 ", " 99 ", 1))
+    else:  # wfdb raises HeaderSyntaxError
+        hea.write_text(text.splitlines()[0] + "\nnot a signal line\n")
+
+    with pytest.raises(FileReadError) as info:
+        WFDBImporter().load(str(hea))
+    assert str(hea) in str(info.value)
+
+
+def test_wfdb_label_collision_is_a_typed_read_error(tmp_path):
+    """A repeated sig_name whose every suffix is taken names the label and the
+    file, as a typed read error: the header itself is what cannot be read."""
+    import numpy as np
+    import wfdb
+
+    names = ["A", "A", "A-0", *(f"A-{c}" for c in "abcdefghijklmnopqrstuvwxyz")]
+    placeholders = [f"S{i}" for i in range(len(names))]
+    wfdb.wrsamp(
+        "rec",
+        fs=250,
+        units=["mV"] * len(names),
+        sig_name=placeholders,
+        p_signal=np.random.default_rng(2).normal(size=(100, len(names))),
+        fmt=["16"] * len(names),
+        write_dir=str(tmp_path),
+    )
+    hea = tmp_path / "rec.hea"
+    lines = hea.read_text().splitlines()
+    for i, name in enumerate(names, start=1):
+        head, placeholder = lines[i].rsplit(" ", 1)
+        assert placeholder == placeholders[i - 1]
+        lines[i] = f"{head} {name}"
+    hea.write_text("\n".join(lines) + "\n")
+    assert wfdb.rdrecord(str(tmp_path / "rec")).sig_name == names
+
+    with pytest.raises(FileReadError, match="WFDB channel label 'A'") as info:
+        WFDBImporter().load(str(hea))
+    assert str(hea) in str(info.value)
