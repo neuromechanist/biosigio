@@ -638,3 +638,27 @@ def test_eeglab_padded_label_collision_stays_unique(tmp_path):
         col = rec.signals[label].to_numpy()
         assert col.ndim == 1
         np.testing.assert_allclose(col, data[i], rtol=0, atol=1e-5)
+
+
+def test_classic_missing_srate_defaults_with_a_warning(tmp_path, caplog):
+    """A classic .set with no srate loads at the 1000 Hz default, logged, not silent."""
+    path = str(tmp_path / "no_srate.set")
+    scipy.io.savemat(
+        path,
+        {
+            "nbchan": np.array([[1]]),
+            "trials": np.array([[1]]),
+            "pnts": np.array([[4]]),
+            "data": np.zeros((1, 4), dtype=np.float32),
+            "event": np.array(
+                [(np.array([[101.0]]), np.array(["stim"]))],
+                dtype=[("latency", "O"), ("type", "O")],
+            ),
+        },
+    )
+
+    with caplog.at_level("WARNING", logger="biosigio.importers.eeglab"):
+        rec = EEGLABImporter().load(path)
+
+    assert "has no sampling rate" in caplog.text and "assuming 1000 Hz" in caplog.text
+    assert rec.events["onset"].tolist() == pytest.approx([0.1])  # (101 - 1) / 1000

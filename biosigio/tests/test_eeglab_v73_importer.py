@@ -99,7 +99,7 @@ def _write_v73_set(
         path: Destination ``.set`` path.
         nbchan: ``EEG.nbchan`` (written as a 1x1 float, matching real files).
         pnts: ``EEG.pnts``.
-        srate: ``EEG.srate``.
+        srate: ``EEG.srate`` (None leaves the field out).
         trials: ``EEG.trials`` (>1 marks the file epoched).
         data: ``(nbchan, pnts)`` channel-major array. Written to HDF5
             transposed to ``(pnts, nbchan)`` -- the orientation h5py/MATLAB
@@ -108,11 +108,12 @@ def _write_v73_set(
         data_filename: If given (instead of ``data``), ``EEG.data`` is written
             as a char array holding this filename, exercising the
             companion-``.fdt`` path.
-        labels: Per-channel label strings for ``chanlocs.labels``.
+        labels: Per-channel label strings for ``chanlocs.labels`` (a None
+            entry is written as MATLAB's empty ``[]``).
         types: Per-channel type strings for ``chanlocs.type``.
         x: Per-channel ``chanlocs.X`` floats.
         events: List of ``{"latency": float, "type": str}`` dicts for
-            ``EEG.event``.
+            ``EEG.event`` (a None type is written as MATLAB's empty ``[]``).
         header_nbchan: If given, overrides the ``nbchan`` value actually
             written to the header (default: ``nbchan``), for exercising a
             header/data mismatch without changing the data matrix itself.
@@ -143,7 +144,8 @@ def _write_v73_set(
             eeg = f.create_group("EEG")
             eeg.attrs["MATLAB_class"] = np.bytes_(b"struct")
         eeg.create_dataset("nbchan", data=np.array([[float(header_nbchan or nbchan)]]))
-        eeg.create_dataset("srate", data=np.array([[float(srate)]]))
+        if srate is not None:
+            eeg.create_dataset("srate", data=np.array([[float(srate)]]))
         eeg.create_dataset("pnts", data=np.array([[float(pnts)]]))
         eeg.create_dataset("trials", data=np.array([[float(trials)]]))
         if xmin is not None:
@@ -177,6 +179,19 @@ def _write_v73_set(
                 ds.attrs["MATLAB_class"] = np.bytes_(b"double")
             return ds.ref
 
+        def empty_ref():
+            # MATLAB stores an empty `[]` as a uint64 dims dataset flagged
+            # MATLAB_empty (real EEGLAB files do this for unset X/Y/Z, and for
+            # an event type or channel label left empty).
+            ref_counter[0] += 1
+            ds = refs.create_dataset(f"e{ref_counter[0]}", data=np.array([0, 0], dtype=np.uint64))
+            ds.attrs["MATLAB_class"] = np.bytes_(b"double")
+            ds.attrs["MATLAB_empty"] = np.uint8(1)
+            return ds.ref
+
+        def text_ref(text):
+            return empty_ref() if text is None else new_ref(text=text)
+
         if data_filename is not None:
             codes = np.array([ord(c) for c in data_filename], dtype=np.uint16)
             eeg.create_dataset("data", data=codes)
@@ -195,7 +210,7 @@ def _write_v73_set(
             chanlocs.attrs["MATLAB_class"] = np.bytes_(b"struct")
             chanlocs.create_dataset(
                 "labels",
-                data=np.array([new_ref(text=lbl) for lbl in labels], dtype=h5py.ref_dtype),
+                data=np.array([text_ref(lbl) for lbl in labels], dtype=h5py.ref_dtype),
             )
             if types is not None:
                 chanlocs.create_dataset(
@@ -203,17 +218,6 @@ def _write_v73_set(
                     data=np.array([new_ref(text=t) for t in types], dtype=h5py.ref_dtype),
                 )
             if x == "empty":
-                # MATLAB stores an empty `[]` as a uint64 dims dataset flagged
-                # MATLAB_empty (real EEGLAB files do this for unset X/Y/Z).
-                def empty_ref():
-                    ref_counter[0] += 1
-                    ds = refs.create_dataset(
-                        f"e{ref_counter[0]}", data=np.array([0, 0], dtype=np.uint64)
-                    )
-                    ds.attrs["MATLAB_class"] = np.bytes_(b"double")
-                    ds.attrs["MATLAB_empty"] = np.uint8(1)
-                    return ds.ref
-
                 chanlocs.create_dataset(
                     "X",
                     data=np.array([empty_ref() for _ in labels], dtype=h5py.ref_dtype),
@@ -239,7 +243,7 @@ def _write_v73_set(
             )
             event_grp.create_dataset(
                 "type",
-                data=np.array([new_ref(text=e["type"]) for e in events], dtype=h5py.ref_dtype),
+                data=np.array([text_ref(e["type"]) for e in events], dtype=h5py.ref_dtype),
             )
 
     with open(inner_path, "rb") as fh:
@@ -786,6 +790,69 @@ def test_v73_events_loaded(tmp_path):
     assert list(rec.events["description"]) == ["stim", "resp"]
     expected_onsets = [(100) / 100.0, (200) / 100.0]  # (latency - 1) / srate
     assert rec.events["onset"].tolist() == pytest.approx(expected_onsets)
+
+
+def test_v73_events_with_empty_type_are_dropped_and_counted(tmp_path, caplog):
+    """An event whose type is MATLAB's empty ``[]`` cannot be described, so it is
+    dropped, and the drop is logged with a count rather than silent."""
+    path = str(tmp_path / "empty_type.set")
+    events = [
+        {"latency": 11, "type": "stim"},
+        {"latency": 21, "type": None},
+        {"latency": 31, "type": None},
+    ]
+    _write_v73_set(
+        path, nbchan=1, pnts=50, srate=10.0, data=np.zeros((1, 50), np.float32), events=events
+    )
+
+    with caplog.at_level("WARNING", logger="biosigio.importers.eeglab"):
+        rec = EEGLABImporter().load(path)
+
+    assert list(rec.events["description"]) == ["stim"]
+    assert "dropped 2 event(s) with an empty type or latency" in caplog.text
+    assert path in caplog.text
+
+
+def test_v73_empty_channel_label_is_counted(tmp_path, caplog):
+    """A chanlocs label that is MATLAB's empty ``[]`` falls back to the default
+    ``ChannelN`` name, and the fallback is logged with a count."""
+    path = str(tmp_path / "empty_label.set")
+    _write_v73_set(
+        path,
+        nbchan=3,
+        pnts=5,
+        srate=10.0,
+        data=np.zeros((3, 5), np.float32),
+        labels=["Fz", None, "Pz"],
+    )
+
+    with caplog.at_level("WARNING", logger="biosigio.importers.eeglab"):
+        rec = EEGLABImporter().load(path)
+
+    assert list(rec.channels) == ["Fz", "Channel2", "Pz"]
+    assert "1 channel(s) have an empty label" in caplog.text
+
+
+@pytest.mark.parametrize("srate", [None, 0.0])
+def test_v73_missing_srate_defaults_with_a_warning(tmp_path, caplog, srate):
+    """A header with no usable sampling rate still loads at the 1000 Hz default,
+    but the assumption is logged instead of silent."""
+    path = str(tmp_path / "no_srate.set")
+    _write_v73_set(path, nbchan=1, pnts=4, srate=srate, data=np.zeros((1, 4), np.float32))
+
+    with caplog.at_level("WARNING", logger="biosigio.importers.eeglab"):
+        rec = EEGLABImporter().load(path)
+
+    assert rec.get_metadata("srate") == 1000.0
+    assert "has no sampling rate" in caplog.text and "assuming 1000 Hz" in caplog.text
+
+
+def test_v73_present_srate_logs_nothing(tmp_path, caplog):
+    path = str(tmp_path / "srate.set")
+    _write_v73_set(path, nbchan=1, pnts=4, srate=250.0, data=np.zeros((1, 4), np.float32))
+    with caplog.at_level("WARNING", logger="biosigio.importers.eeglab"):
+        EEGLABImporter().load(path)
+    assert "sampling rate" not in caplog.text
 
 
 def test_v73_missing_chanlocs_falls_back_to_default_labels(tmp_path):

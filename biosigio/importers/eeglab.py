@@ -17,6 +17,7 @@ h5py is an optional dependency (the ``hdf5`` extra), imported lazily via
 :func:`require_h5py`; classic ``.set`` files need no extra at all.
 """
 
+import logging
 import os
 import warnings
 from typing import Any
@@ -37,6 +38,10 @@ from .base import BaseImporter
 # never mistakes a truncated/corrupt classic file for a v7.3 one.
 _MATLAB_V73_MAGIC = b"MATLAB 7.3 MAT-file"
 _MAGIC_SNIFF_BYTES = 128
+# Sampling rate assumed when a .set header carries none (absent, empty or zero).
+_DEFAULT_SRATE = 1000.0
+
+logger = logging.getLogger(__name__)
 
 
 def require_h5py():
@@ -500,10 +505,13 @@ class EEGLABImporter(BaseImporter):
     ) -> list[dict[str, Any]]:
         """v7.3 equivalent of :meth:`_process_channel_info`, from dereferenced records."""
         channel_info_list = []
+        n_unlabelled = 0
         for record in self._deref_struct_array(h5py_mod, h5file, chanlocs_group):
             channel_info: dict[str, Any] = {}
             if record.get("labels") is not None:
                 channel_info["label"] = str(record["labels"])
+            else:
+                n_unlabelled += 1
             if record.get("type") is not None:
                 channel_info["type"] = str(record["type"])
             for axis in ("X", "Y", "Z"):
@@ -513,6 +521,13 @@ class EEGLABImporter(BaseImporter):
             # fallback when `type` is absent/unrecognized).
             channel_info["channel_type"] = self._determine_channel_type(channel_info)
             channel_info_list.append(channel_info)
+        if n_unlabelled:
+            logger.warning(
+                "EEGLAB v7.3 chanlocs in %s: %d channel(s) have an empty label; "
+                "they get the default ChannelN label instead.",
+                h5file.filename,
+                n_unlabelled,
+            )
         return channel_info_list
 
     def _process_events_v73(
@@ -520,8 +535,10 @@ class EEGLABImporter(BaseImporter):
     ) -> list[dict[str, Any]]:
         """v7.3 equivalent of :meth:`_process_events`, from dereferenced records."""
         event_list = []
+        n_dropped = 0
         for record in self._deref_struct_array(h5py_mod, h5file, event_group):
             if record.get("latency") is None or record.get("type") is None:
+                n_dropped += 1
                 continue
             duration = record.get("duration")
             event_list.append(
@@ -530,6 +547,12 @@ class EEGLABImporter(BaseImporter):
                     "type": str(record["type"]),
                     "duration": float(duration) if duration is not None else 0.0,
                 }
+            )
+        if n_dropped:
+            logger.warning(
+                "EEGLAB v7.3 events in %s: dropped %d event(s) with an empty type or latency.",
+                h5file.filename,
+                n_dropped,
             )
         return event_list
 
@@ -564,7 +587,15 @@ class EEGLABImporter(BaseImporter):
                 # `_h5_scalar`), so they are flattened and coerced to the
                 # int/float the rest of the importer expects.
                 nbchan = int(round(self._h5_scalar(eeg, "nbchan", 0.0)))
-                srate = self._h5_scalar(eeg, "srate", 1000.0) or 1000.0
+                srate = self._h5_scalar(eeg, "srate", 0.0)
+                if not srate:
+                    logger.warning(
+                        "EEGLAB v7.3 file %s has no sampling rate (srate absent, empty "
+                        "or zero); assuming %g Hz.",
+                        filepath,
+                        _DEFAULT_SRATE,
+                    )
+                    srate = _DEFAULT_SRATE
                 pnts = int(round(self._h5_scalar(eeg, "pnts", 0.0)))
                 trials = int(round(self._h5_scalar(eeg, "trials", 1.0))) or 1
 
@@ -756,7 +787,15 @@ class EEGLABImporter(BaseImporter):
             # for the signal time index).
             # Fall back to 1000 Hz when srate is absent OR present-but-zero (an
             # empty srate field), so the event/time-index divisions never hit 0.
-            srate = float(metadata.get("srate", 1000)) or 1000.0
+            srate = float(metadata.get("srate", 0.0))
+            if not srate:
+                logger.warning(
+                    "EEGLAB file %s has no sampling rate (srate absent, empty or "
+                    "zero); assuming %g Hz.",
+                    filepath,
+                    _DEFAULT_SRATE,
+                )
+                srate = _DEFAULT_SRATE
 
             # Process channel information
             if "chanlocs" in data and data["chanlocs"].size > 0:
