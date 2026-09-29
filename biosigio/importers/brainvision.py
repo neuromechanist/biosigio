@@ -8,9 +8,11 @@ MNE exposes as annotations) are read into ``Recording.events``.
 """
 
 import contextlib
+import errno
 import logging
 import os
 import re
+import shutil
 import tempfile
 from collections.abc import Iterator
 
@@ -75,15 +77,86 @@ def _declare_utf8(text: str) -> str:
     return first + sep + rest
 
 
+# Recording-metadata key recording a successful stale-header recovery: which
+# header key named which missing file, and which same-stem sibling was read
+# instead, as ``{"DataFile": {"referenced": ..., "used": ...}, ...}``.
+HEADER_RECOVERED_KEY = "brainvision_header_recovered"
+# Canonical spelling of the two keys the resolver rewrites.
+_KEY_NAMES = {"datafile": "DataFile", "markerfile": "MarkerFile"}
+
+
+class BrainVisionHeaderRecoveryError(RuntimeError):
+    """A header names missing files and the recovery copy could not be written.
+
+    Raised by :func:`resolved_vhdr` when the same-stem siblings exist but their
+    absolute paths cannot be spelled in any header encoding, not even UTF-8
+    (a path holding undecodable, surrogate-escaped bytes). It is deliberately
+    NOT a :class:`~biosigio.exceptions.BiosigIOError`: the recording itself is
+    readable, and what failed is spelling this host's path to it, the same
+    class of condition as a temp copy that cannot be written (which propagates
+    as a raw ``OSError``). A caller that treats typed errors as permanent file
+    failures therefore does not record this one as such.
+    """
+
+
+def _sibling_finder(stem: str):
+    """Return ``find(exts)``: the first existing ``<stem><ext>`` for ``exts``, or None.
+
+    Each extension is tried exactly first, then case-insensitively (``X.EEG``
+    or ``X.VMRK`` beside ``X.vhdr`` on a case-sensitive filesystem), where a
+    case-insensitive candidate is accepted only when it is the ONLY one: two
+    files differing only in case leave the reference unresolved rather than
+    guessing. The directory is listed once, lazily.
+    """
+    directory = os.path.dirname(stem)
+    base = os.path.basename(stem)
+    entries: list[str] | None = None
+
+    def listing() -> list[str]:
+        nonlocal entries
+        if entries is None:
+            try:
+                entries = os.listdir(directory)
+            except OSError as err:
+                if is_resource_exhaustion(err):
+                    raise
+                logger.warning(
+                    "Could not list %s to look for BrainVision siblings "
+                    "case-insensitively (%s); trying exact names only.",
+                    directory,
+                    err,
+                )
+                entries = []
+        return entries
+
+    def find(exts: tuple[str, ...]) -> str | None:
+        for ext in exts:
+            exact = stem + ext
+            if os.path.isfile(exact):
+                return exact
+            wanted = (base + ext).lower()
+            matches = [
+                name
+                for name in listing()
+                if name.lower() == wanted and os.path.isfile(os.path.join(directory, name))
+            ]
+            if len(matches) == 1:
+                return os.path.join(directory, matches[0])
+        return None
+
+    return find
+
+
 @contextlib.contextmanager
-def resolved_vhdr(vhdr_path: str) -> Iterator[str]:
+def resolved_vhdr(vhdr_path: str, *, substitutions: dict | None = None) -> Iterator[str]:
     """Yield a ``.vhdr`` path whose ``DataFile=``/``MarkerFile=`` point at files that exist.
 
     BIDS renames the BrainVision triplet on disk but not the references inside the
     header, so the header can name a pre-rename ``.eeg``/``.vmrk`` that no longer
     exists while the renamed file sits beside it with the header's stem (the same
     defect :meth:`EEGLABImporter._read_fdt` resolves for ``.fdt``). When a referenced
-    file is missing and that same-stem sibling exists, a patched copy of the header
+    file is missing and that same-stem sibling exists (matched exactly, else
+    case-insensitively when exactly one file matches), a patched copy of the header
     (original encoding and line endings; only those two keys rewritten, to absolute
     paths) is written to a temporary directory and yielded instead; when the header's
     codepage cannot spell such a path, the copy is written as UTF-8 with its
@@ -93,30 +166,60 @@ def resolved_vhdr(vhdr_path: str) -> Iterator[str]:
 
     Args:
         vhdr_path: Path to the BrainVision ``.vhdr`` header.
+        substitutions: Optional dict filled, when a patched copy is yielded, with
+            ``{"DataFile": {"referenced": <name in the header>, "used": <sibling
+            file name>}, ...}`` for each substituted key; callers record it under
+            :data:`HEADER_RECOVERED_KEY`. Left empty otherwise.
 
     Yields:
         The path to hand to MNE; a patched copy is removed on exit (MNE reads the
         header and markers when the ``Raw`` is built and keeps only the data path).
+
+    Raises:
+        BrainVisionHeaderRecoveryError: The siblings exist but no header encoding
+            can spell their paths (see the class).
+        OSError: Reading the header failed with resource exhaustion, or writing
+            the patched copy failed; both are host conditions, raised unchanged.
     """
     directory = os.path.dirname(os.path.abspath(vhdr_path))
     stem = os.path.splitext(os.path.abspath(vhdr_path))[0]
     content: bytes | None = None
+    read_error: OSError | None = None
     try:
         with open(vhdr_path, "rb") as f:
             content = f.read()
-    except OSError:
-        # Yield below, not here: yielding inside ``except`` would run the caller's
+    except OSError as err:
+        # Handled below, not here: yielding inside ``except`` would run the caller's
         # block with this OSError as the implicit ``__context__`` of anything it raises.
-        pass
+        read_error = err
     if content is None:
+        assert read_error is not None  # content stays None only when open/read raised
+        if is_resource_exhaustion(read_error):
+            # The host, not the header: raised as-is so a caller can retry.
+            raise read_error
         # Unreadable header: hand MNE the original path and let it raise the real
         # read error, typed by the caller exactly as before this resolver existed.
+        logger.warning(
+            "Could not read BrainVision header %s to check its file references "
+            "(errno %s: %s); handing it to the reader unchanged.",
+            vhdr_path,
+            errno.errorcode.get(read_error.errno, read_error.errno)
+            if read_error.errno is not None
+            else None,
+            read_error.strerror or read_error,
+        )
+        read_error = None
         yield vhdr_path
         return
     encoding = _header_encoding(content)
     lines = _LINE_BREAK.split(content.decode(encoding))
+    find_sibling = _sibling_finder(stem)
 
-    stale = False
+    found: dict[str, dict[str, str]] = {}
+    # A marker sibling found only case-insensitively (``X.VMRK``): MNE picks the
+    # marker reader by the file's exact suffix, so it must be handed a ``.vmrk``
+    # name. Staged as a byte copy in the temp directory: (line index, parts).
+    staged_marker: tuple[int, str, str, str, str, str, str] | None = None
     section = ""
     for i, line in enumerate(lines):
         body = line.rstrip("\r\n")
@@ -127,45 +230,66 @@ def resolved_vhdr(vhdr_path: str) -> Iterator[str]:
         if section != "[common infos]" or match is None or not match.group(4):
             continue
         indent, key, sep, ref, trail = match.groups()
+        eol = line[len(body) :]
         target = os.path.join(directory, ref)
         if not os.path.isfile(target):
-            siblings = (stem + ext for ext in _SIBLING_EXTS[key.lower()])
-            sibling = next((p for p in siblings if os.path.isfile(p)), None)
+            sibling = find_sibling(_SIBLING_EXTS[key.lower()])
             if sibling is not None:
-                target, stale = sibling, True
+                target = sibling
+                found[_KEY_NAMES[key.lower()]] = {
+                    "referenced": ref,
+                    "used": os.path.basename(sibling),
+                }
+                if key.lower() == "markerfile" and not sibling.endswith(".vmrk"):
+                    staged_marker = (i, indent, key, sep, trail, eol, sibling)
         # Every reference becomes absolute: the patched copy lives elsewhere.
-        eol = line[len(body) :]
         lines[i] = f"{indent}{key}{sep}{os.path.abspath(target)}{trail}{eol}"
 
-    if not stale:
-        yield vhdr_path
-        return
-    text = "".join(lines)
-    patched: bytes | None = None
-    try:
-        patched = text.encode(encoding)
-    except UnicodeEncodeError:
-        # An absolute path the header's codepage cannot spell (e.g. a Greek or CJK
-        # directory under a cp1252 header): write the copy as UTF-8 instead and
-        # declare it, which every character of the decoded header can be spelled in.
-        with contextlib.suppress(UnicodeEncodeError):
-            patched = _declare_utf8(text).encode("utf-8")
-    if patched is None:
-        # Not even UTF-8 can spell it (an undecodable, surrogate-escaped path).
-        logger.warning(
-            "BrainVision header %s names missing files, but the same-stem siblings' "
-            "paths cannot be written into a header; reading it unpatched.",
-            vhdr_path,
-        )
+    if not found:
         yield vhdr_path
         return
     # A failure to create or write the copy propagates unchanged (see
     # BrainVisionImporter.load); a failure to remove it after a successful read is
     # ignored rather than turned into a spurious error for a recording that loaded.
     with tempfile.TemporaryDirectory(prefix="biosigio-vhdr-", ignore_cleanup_errors=True) as tmp:
+        if staged_marker is not None:
+            i, indent, key, sep, trail, eol, sibling = staged_marker
+            staged = os.path.join(tmp, "marker.vmrk")
+            shutil.copyfile(sibling, staged)
+            lines[i] = f"{indent}{key}{sep}{staged}{trail}{eol}"
+        text = "".join(lines)
+        patched: bytes | None = None
+        try:
+            patched = text.encode(encoding)
+        except UnicodeEncodeError:
+            # An absolute path the header's codepage cannot spell (e.g. a Greek or
+            # CJK directory under a cp1252 header): write the copy as UTF-8 instead
+            # and declare it, which every character of the decoded header can be
+            # spelled in.
+            with contextlib.suppress(UnicodeEncodeError):
+                patched = _declare_utf8(text).encode("utf-8")
+        if patched is None:
+            # Not even UTF-8 can spell it (an undecodable, surrogate-escaped path).
+            # Handing MNE the stale header would only fail on the missing file and
+            # hide the real cause, so say what happened instead.
+            missing = ", ".join(f"{k}={v['referenced']}" for k, v in found.items())
+            raise BrainVisionHeaderRecoveryError(
+                f"BrainVision header {vhdr_path} names missing files ({missing}); the "
+                "same-stem siblings exist, but the recovery copy pointing at them "
+                "could not be written because their paths cannot be encoded in a "
+                "header, not even as UTF-8"
+            )
         tmp_vhdr = os.path.join(tmp, os.path.basename(vhdr_path))
         with open(tmp_vhdr, "wb") as f:
             f.write(patched)
+        logger.info(
+            "BrainVision header %s names missing files; reading it through a patched "
+            "copy that points at the same-stem siblings: %s",
+            vhdr_path,
+            ", ".join(f"{k}: {v['referenced']} -> {v['used']}" for k, v in found.items()),
+        )
+        if substitutions is not None:
+            substitutions.update(found)
         yield tmp_vhdr
 
 
@@ -203,13 +327,16 @@ class BrainVisionImporter(BaseImporter):
             are read into ``Recording.events``.
         """
         mne = require_mne()
-        # The resolver sits OUTSIDE the classifying try on purpose: the only thing
-        # it can raise is a failure to write the patched temporary header (ENOSPC,
-        # EROFS, EACCES, quota), which is a host condition, not a property of the
-        # recording, and must propagate as-is rather than become a typed (possibly
-        # permanent) read failure. An unreadable header is not raised here; the
-        # resolver yields the original path and MNE raises inside the try below.
-        with resolved_vhdr(filepath) as vhdr:
+        # The resolver sits OUTSIDE the classifying try on purpose: what it can
+        # raise is a failure to write the patched temporary header (ENOSPC,
+        # EROFS, EACCES, quota), resource exhaustion while reading the header, or
+        # BrainVisionHeaderRecoveryError (a sibling path no header can spell).
+        # Each is a host condition, not a property of the recording, and must
+        # propagate as-is rather than become a typed (possibly permanent) read
+        # failure. Any other unreadable header is not raised here; the resolver
+        # yields the original path and MNE raises inside the try below.
+        recovered: dict = {}
+        with resolved_vhdr(filepath, substitutions=recovered) as vhdr:
             try:
                 raw = mne.io.read_raw_brainvision(vhdr, preload=True, verbose="ERROR")
             except Exception as e:
@@ -223,6 +350,9 @@ class BrainVisionImporter(BaseImporter):
 
         rec = raw_to_recording(raw)
         rec.set_metadata("source_file", filepath)
+        if recovered:
+            # A stale header read through its siblings is recorded, not silent.
+            rec.set_metadata(HEADER_RECOVERED_KEY, recovered)
 
         events = self._read_events(raw)
         if not events.empty:
