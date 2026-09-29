@@ -158,3 +158,40 @@ def test_missing_sibling_still_errors(tmp_path):
         Recording.from_file(vhdr)
     with pytest.raises(FileNotFoundError, match="s13_run2_060717.eeg"):
         _open_stream_source(vhdr, None)
+
+
+@pytest.mark.parametrize("scratch", ["missing", "read-only"])
+def test_temp_copy_failure_is_a_host_error_not_a_file_error(tmp_path, monkeypatch, scratch):
+    """A temp-copy write that the OS refuses (here ENOENT/EACCES; ENOSPC, EROFS and
+    quota take the same path) propagates as the raw OSError, never as a typed
+    BiosigIOError that a caller could record as a permanent file failure."""
+    import errno
+    import tempfile
+
+    from biosigio.exceptions import BiosigIOError
+
+    data_dir = tmp_path / "data"
+    data_dir.mkdir()
+    vhdr, _ = _write_triplet(data_dir, "old.eeg", "old.vmrk")
+    tmp_root = tmp_path / "scratch"
+    if scratch == "read-only":
+        if hasattr(os, "geteuid") and os.geteuid() == 0:
+            pytest.skip("root ignores directory permissions")
+        tmp_root.mkdir()
+        tmp_root.chmod(0o500)
+        expected = errno.EACCES
+    else:
+        expected = errno.ENOENT
+    # A real temp root the OS cannot write to: no business logic is replaced.
+    monkeypatch.setattr(tempfile, "tempdir", str(tmp_root))
+    try:
+        with pytest.raises(OSError) as info:
+            Recording.from_file(vhdr)
+        assert not isinstance(info.value, BiosigIOError)
+        assert info.value.errno == expected
+        with pytest.raises(OSError) as info:
+            _open_stream_source(vhdr, None)
+        assert not isinstance(info.value, BiosigIOError)
+    finally:
+        if tmp_root.exists():
+            tmp_root.chmod(0o700)
