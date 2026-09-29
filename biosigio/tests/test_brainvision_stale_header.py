@@ -145,7 +145,7 @@ def test_matching_header_is_read_unchanged(tmp_path):
         # Only the marker is stale. MNE >= 1.13 recovers this itself, so the row
         # would pass with or without resolved_vhdr's marker patch there; it is
         # skipped rather than reported as proof, and runs on MNE < 1.13 (the
-        # 1.12.x line NEMAR runs, pinned by a separate CI job).
+        # 1.12.x line some deployments still pin, run by a separate CI job).
         pytest.param(
             f"{STEM}.eeg",
             "sub-01_task-MOBA_game_eeg.vmrk",
