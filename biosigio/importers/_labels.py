@@ -2,6 +2,8 @@
 
 import logging
 
+logger = logging.getLogger(__name__)
+
 
 def unique_channel_labels(labels: list[str]) -> list[str]:
     """Rename repeated EDF labels the way MNE does, so no channel is dropped.
@@ -18,7 +20,7 @@ def unique_channel_labels(labels: list[str]) -> list[str]:
     dups = [name for name in dict.fromkeys(names) if names.count(name) > 1]
     if not dups:
         return names
-    logging.warning(
+    logger.warning(
         "EDF channel labels are not unique, found duplicates for: %s. "
         "Applying running numbers for duplicates.",
         dups,
