@@ -722,6 +722,24 @@ def test_v73_channel_labels_dereferenced_through_refs(tmp_path):
     assert set(rec.channels.keys()) == set(labels)
 
 
+def test_v73_repeated_label_never_takes_a_genuine_label(tmp_path):
+    """v7.3 follows the classic rule: ``Fz, Fz, Fz_2`` -> ``Fz, Fz_3, Fz_2``."""
+    path = str(tmp_path / "repeated.set")
+    labels = ["Fz", "Fz", "Fz_2", "Cz", "Cz"]
+    pnts = 10
+    data = (np.arange(len(labels))[:, None] * 100 + np.arange(pnts)).astype(np.float32)
+    _write_v73_set(path, nbchan=len(labels), pnts=pnts, srate=100.0, data=data, labels=labels)
+
+    with pytest.warns(UserWarning, match="duplicate EEGLAB channel label"):
+        rec = EEGLABImporter().load(path)
+
+    assert list(rec.signals.columns) == ["Fz", "Fz_3", "Fz_2", "Cz", "Cz_2"]
+    assert list(rec.channels) == list(rec.signals.columns)
+    for i, label in enumerate(rec.signals.columns):
+        np.testing.assert_array_equal(rec.signals[label].to_numpy(), data[i])
+    assert rec.metadata["channel_labels_deduplicated"] == {"Fz_3": "Fz", "Cz_2": "Cz"}
+
+
 def test_v73_non_monotonic_labels_preserve_order(tmp_path):
     """Labels out of lexical/numeric order are not silently re-sorted.
 
