@@ -60,7 +60,11 @@ arguments) and must return a `Recording` object. Populate it through the public
 API rather than returning raw containers:
 
 - **signals**: built up by `add_channel()`, which stores each channel as a
-  column in `Recording.signals` (a pandas DataFrame indexed by time).
+  column in `Recording.signals` (a pandas DataFrame indexed by time). Labels
+  must be unique: `add_channel()` raises `ValueError` on a label the Recording
+  already has, so an importer for a format that allows repeated labels has to
+  make them unique first (the EDF, WFDB and Zarr importers use
+  `biosigio.importers._labels.unique_channel_labels`).
 - **channels**: each `add_channel()` call records per-channel metadata in
   `Recording.channels`:
 

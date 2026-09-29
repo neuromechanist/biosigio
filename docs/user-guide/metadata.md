@@ -61,6 +61,14 @@ emg1_info = rec.channels['EMG1']
 print(f"EMG1 Unit: {emg1_info['physical_dimension']}")
 ```
 
+To change a channel's metadata, use `rec.set_channel()`, which validates the channel type and modality and re-derives the modality when only the type changes:
+
+```python
+rec.set_channel('EMG1', channel_type='EMG', physical_dimension='mV')
+```
+
+`set_channel` never touches the samples. Channel labels are unique, so `rec.add_channel()` with an existing label raises `ValueError`; to replace a channel's samples, assign `rec.signals['EMG1'] = new_data` (same length as the recording).
+
 ## Annotations / Events
 
 Time-stamped annotations or events associated with the recording are stored in the `rec.events` attribute as a pandas DataFrame.
