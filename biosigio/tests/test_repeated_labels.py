@@ -327,6 +327,20 @@ def test_trigno_repeated_label_takes_each_lines_metadata_in_order(tmp_path):
     assert list(rec.signals["EMG 1_1"]) == [10, 20, 30]
 
 
+def test_trigno_repeated_label_with_unmatchable_header_is_refused(tmp_path):
+    """Matching by position needs one header field per column; otherwise refuse, never guess."""
+    path = tmp_path / "split.csv"
+    meta = (
+        "Label: EMG 1 Sampling frequency: 1.000000e+002 Number of points: 2 "
+        "start: 0.000000e+000 Unit: V Domain Unit: s\n"
+    )
+    # A quoted newline splits the header: pandas reads four columns across two
+    # lines, while the header line itself has only two fields.
+    path.write_text(meta * 2 + '\nX[s],"EMG\n1",X[s],"EMG 1"\n0.0,1,0.0,10\n0.01,2,0.01,20\n')
+    with pytest.raises(ValueError, match=r"repeat 'EMG 1'.*has 2 fields.*has 4 columns"):
+        TrignoImporter().load(str(path))
+
+
 def test_trigno_example_file_records_no_renames():
     """The bundled Delsys export has unique labels and imports every channel by name."""
     path = Path(__file__).resolve().parents[2] / "examples" / "truncated_trigno_sample.csv"
