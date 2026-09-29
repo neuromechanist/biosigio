@@ -11,6 +11,7 @@ the samples behind each label survive. The EDF/BDF side lives in
 import struct
 
 import numpy as np
+import pytest
 
 from biosigio.importers._labels import DEDUPLICATED_LABELS_KEY, suffix_repeated_labels
 from biosigio.importers.xdf import XDFImporter
@@ -157,3 +158,15 @@ def test_xdf_unique_labels_record_no_renames(tmp_path):
     rec = XDFImporter().load(path)
     assert list(rec.signals.columns) == ["C3", "C4"]
     assert DEDUPLICATED_LABELS_KEY not in rec.metadata
+
+
+# --- Recording.select_channels ------------------------------------------------
+
+
+def test_select_channels_refuses_a_name_listed_twice(tmp_path):
+    path = _write_xdf(tmp_path / "sel.xdf", [("Amp", ["C3", "C4"], _block(0.0, 2))])
+    rec = XDFImporter().load(path)
+    with pytest.raises(ValueError, match=r"more than once: \['C3'\]"):
+        rec.select_channels(["C3", "C4", "C3"])
+    subset = rec.select_channels(["C4", "C3"])
+    assert list(subset.signals.columns) == list(subset.channels) == ["C4", "C3"]
