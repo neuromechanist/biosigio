@@ -299,6 +299,9 @@ class EdfFallbackRecording:
     filetype: int
     file_duration: float
     datarecord_duration: float
+    # ``{new_label: header_label}`` for every repeated header label that was
+    # suffixed (see :func:`~biosigio.importers._labels.unique_channel_labels`).
+    renamed_labels: dict[str, str] = field(default_factory=dict)
 
 
 def _expected_gain(dimension: str) -> float:
@@ -464,7 +467,9 @@ def read_edf_tolerant(filepath: str, reason: str) -> EdfFallbackRecording:
                 f"read by MNE back to header channel {probed['label']!r} at the "
                 "same position"
             )
-    labels = unique_channel_labels([p["label"] for p in probed_channels])
+    labels, renamed = unique_channel_labels(
+        [p["label"] for p in probed_channels], filepath=filepath
+    )
 
     gains = _channel_gains(raw, [p["dimension"] for p in probed_channels])
 
@@ -510,4 +515,5 @@ def read_edf_tolerant(filepath: str, reason: str) -> EdfFallbackRecording:
         filetype=filetype,
         file_duration=(raw.n_times / sfreq) if sfreq else 0.0,
         datarecord_duration=probe.duration_of_data_record,
+        renamed_labels=renamed,
     )

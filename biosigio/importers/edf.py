@@ -8,7 +8,7 @@ import pyedflib
 from ..core.emg import Recording
 from ..exceptions import MixedSamplingRateError, classify_read_error, is_resource_exhaustion
 from ._edf_tolerant import classify_pyedflib_error, read_edf_tolerant
-from ._labels import unique_channel_labels
+from ._labels import DEDUPLICATED_LABELS_KEY, unique_channel_labels
 from .base import BaseImporter
 
 logger = logging.getLogger(__name__)
@@ -192,13 +192,15 @@ class EDFImporter(BaseImporter):
 
     def _collect_via_fallback(
         self, filepath: str, reason: str
-    ) -> tuple[list[tuple[dict, np.ndarray]], pd.DataFrame, dict]:
+    ) -> tuple[list[tuple[dict, np.ndarray]], pd.DataFrame, dict, dict[str, str]]:
         """Recover a file pyedflib refuses to open (see ``_edf_tolerant``).
 
         Returns the same ``(signal_info, signal_data)`` pairs the normal path
-        builds from ``_read_signal_data``, plus events and a ``file_info`` dict,
-        so the rest of :meth:`load` runs unchanged regardless of which path
-        produced them.
+        builds from ``_read_signal_data``, plus events, a ``file_info`` dict and
+        the fallback reader's label renames (``{new: header_label}``), so the
+        rest of :meth:`load` runs unchanged regardless of which path produced
+        them. The pairs already carry the de-duplicated labels, so the renames
+        are only known from here.
         """
         fallback = read_edf_tolerant(filepath, reason)
         pairs = [
@@ -225,7 +227,7 @@ class EDFImporter(BaseImporter):
             "file_duration": fallback.file_duration,
             "datarecord_duration": fallback.datarecord_duration,
         }
-        return pairs, fallback.events, file_info
+        return pairs, fallback.events, file_info, fallback.renamed_labels
 
     def load(self, filepath: str, *, mixed_rate: str = "error") -> Recording:
         """
@@ -266,7 +268,9 @@ class EDFImporter(BaseImporter):
                 if fallback_reason is None:
                     raise
                 try:
-                    pairs, events, file_info = self._collect_via_fallback(filepath, fallback_reason)
+                    pairs, events, file_info, fallback_renames = self._collect_via_fallback(
+                        filepath, fallback_reason
+                    )
                 except ImportError as import_err:
                     # MNE (the `meg` extra) isn't installed -- degrade to the
                     # original pyedflib error rather than leaving this silent,
@@ -281,6 +285,7 @@ class EDFImporter(BaseImporter):
                 recording_info: dict = {}
             else:
                 fallback_reason = None
+                fallback_renames = {}
                 metadata = self._extract_metadata(edf_reader)
                 recording_info = metadata["recording_info"]
                 file_info = metadata["file_info"]
@@ -305,8 +310,15 @@ class EDFImporter(BaseImporter):
 
             # A Recording is keyed by label, so a repeated header label would
             # silently overwrite a channel; suffix duplicates as MNE does. The
-            # header's own label stays untouched in signal_info.
-            labels = unique_channel_labels([info["label"] for info, _ in pairs])
+            # header's own label stays untouched in signal_info. Every rename is
+            # recorded on the Recording (and so in a Zarr store's metadata), not
+            # only logged.
+            labels, renames = unique_channel_labels(
+                [info["label"] for info, _ in pairs], filepath=filepath
+            )
+            renames = {**fallback_renames, **renames}
+            if renames:
+                rec.set_metadata(DEDUPLICATED_LABELS_KEY, renames)
 
             # Read every signal up front so a mixed per-channel rate is detected
             # before any channel is added: channels of differing native length
