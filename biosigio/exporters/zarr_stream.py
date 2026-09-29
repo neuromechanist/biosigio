@@ -335,7 +335,9 @@ def _open_stream_source(filepath: str, force_modality: str | None):
 
     ``.mefd`` and 4D/BTi each need a specific MNE reader call (see the module
     docstring above) rather than MNE's generic ``read_raw()`` dispatch, so they are
-    opened here and handed to ``_MneSource`` as an already-built ``raw``.
+    opened here and handed to ``_MneSource`` as an already-built ``raw``; so is
+    ``.vhdr``, whose header may name pre-BIDS-rename files
+    (see ``..importers.brainvision.resolved_vhdr``).
     """
     stripped = filepath.rstrip("/\\")
     ext = os.path.splitext(stripped)[1].lower()
@@ -346,6 +348,14 @@ def _open_stream_source(filepath: str, force_modality: str | None):
 
         mne = require_mne_mef()
         raw = mne.io.read_raw_mef(filepath, preload=False, verbose="ERROR")
+        return _MneSource(filepath, force_modality, raw=raw)
+    if ext == ".vhdr":
+        # Same stale DataFile=/MarkerFile= recovery as the in-memory importer.
+        from ..importers.brainvision import resolved_vhdr
+
+        mne = require_mne()
+        with resolved_vhdr(filepath) as vhdr:
+            raw = mne.io.read_raw_brainvision(vhdr, preload=False, verbose="ERROR")
         return _MneSource(filepath, force_modality, raw=raw)
     if ext == "" and os.path.isdir(stripped):
         # Raises UnsupportedFormatError with a clear message if this doesn't
