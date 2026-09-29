@@ -33,6 +33,8 @@ print(f"Selected channels: {len(subset_emg.channels)}")
 
 The names can come in any iterable, not only a list:
 a tuple, a set, `rec.channels.keys()`, a numpy array, or a pandas `Index` or `Series`.
+The selected channels keep the order the iterable yields them in,
+so a set gives an arbitrary column order; pass a list (or `sorted(...)`) when the order matters.
 Each name may appear once: `select_channels(['EMG1', 'EMG1'])` raises `ValueError`,
 because a second copy of a column would leave the new recording's signals and channel table disagreeing.
 

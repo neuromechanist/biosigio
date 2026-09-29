@@ -330,9 +330,11 @@ class Recording:
 
         Args:
             channels: Channel name, or an iterable of channel names (list, tuple,
-                    dict keys, numpy array, pandas Index or Series), to select. If
+                    set, dict keys, numpy array, pandas Index or Series), to select. If
                     None and channel_type is specified, selects all channels of
-                    that type.
+                    that type. The new recording keeps the order the iterable
+                    yields, so a set gives an arbitrary column order; pass a list
+                    when the order matters.
             channel_type: Type of channels to select ('EMG', 'ACC', 'GYRO', etc.).
                         If specified with channels, filters the selection to only
                         channels of this type.
