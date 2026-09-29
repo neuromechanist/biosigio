@@ -19,7 +19,7 @@ mne = pytest.importorskip(
 )
 
 from biosigio import Recording  # noqa: E402
-from biosigio.exceptions import BiosigIOError, FileReadError  # noqa: E402
+from biosigio.exceptions import BiosigIOError, CorruptFileError, FileReadError  # noqa: E402
 from biosigio.exporters.zarr_stream import _open_stream_source  # noqa: E402
 from biosigio.importers.brainvision import (  # noqa: E402
     HEADER_RECOVERED_KEY,
@@ -181,12 +181,44 @@ def test_patched_copy_keeps_encoding_and_line_endings(tmp_path, newline, codepag
 
 
 def test_missing_sibling_still_errors(tmp_path):
+    """No sibling to fall back on: both paths raise the same typed read error."""
     vhdr, _ = _write_triplet(tmp_path, "s13_run2_060717.eeg", "s13_run2_060717.vmrk")
     os.remove(tmp_path / f"{STEM}.eeg")
-    with pytest.raises(Exception, match="s13_run2_060717.eeg"):
+    with pytest.raises(FileReadError, match="s13_run2_060717.eeg") as in_memory:
         Recording.from_file(vhdr)
-    with pytest.raises(FileNotFoundError, match="s13_run2_060717.eeg"):
+    with pytest.raises(FileReadError, match="s13_run2_060717.eeg") as streamed:
         _open_stream_source(vhdr, None)
+    assert type(streamed.value) is type(in_memory.value)
+    assert isinstance(streamed.value.__cause__, FileNotFoundError)
+
+
+@pytest.mark.parametrize("stale", [False, True], ids=["matching", "stale"])
+def test_corrupt_header_is_typed_on_both_paths(tmp_path, stale):
+    """A header MNE cannot parse is a typed (terminal) read error on the streaming
+    path too, not a raw MNE exception a caller would retry forever; and when MNE
+    read the patched temp copy, the message names the real header, not the
+    deleted ``biosigio-vhdr-*`` copy."""
+    refs = ("old.eeg", "old.vmrk") if stale else (f"{STEM}.eeg", f"{STEM}.vmrk")
+    vhdr, _ = _write_triplet(tmp_path, *refs)
+    text = open(vhdr, encoding="utf-8").read()
+    # No SamplingInterval: MNE raises, quoting the header path it was handed.
+    open(vhdr, "w", encoding="utf-8").write(text.replace(f"SamplingInterval={1e6 / SFREQ:g}\n", ""))
+
+    errors = []
+    with pytest.raises(FileReadError) as in_memory:
+        Recording.from_file(vhdr)
+    errors.append(in_memory.value)
+    with pytest.raises(FileReadError) as streamed:
+        _open_stream_source(vhdr, None)
+    errors.append(streamed.value)
+
+    for err in errors:
+        message = str(err)
+        assert "biosigio-vhdr-" not in message
+        assert vhdr in message
+        if "SamplingInterval from" in message:  # MNE's own wording quotes the path
+            assert f"SamplingInterval from {vhdr}" in message
+    assert type(errors[0]) is type(errors[1])
 
 
 @pytest.mark.parametrize(
@@ -489,7 +521,7 @@ def test_lone_cr_header_falls_back_to_utf8(tmp_path):
     MNE itself cannot parse a lone-CR header (it finds no ``[Common Infos]``
     section even when every reference is correct), so the check is on the
     bytes of the copy; the read then fails exactly as the unpatched header
-    would, as a typed error.
+    would, as a typed error naming the real header rather than the temp copy.
     """
     directory = tmp_path / "Ωμέγα"
     directory.mkdir()
@@ -507,8 +539,9 @@ def test_lone_cr_header_falls_back_to_utf8(tmp_path):
     )
     assert patched == expected
     assert b"\n" not in patched
-    with pytest.raises(FileReadError):
+    with pytest.raises(FileReadError) as info:
         Recording.from_file(vhdr)
+    assert "biosigio-vhdr-" not in str(info.value)
 
 
 def test_no_codepage_latin1_header_under_a_path_latin1_cannot_spell(tmp_path):
@@ -593,3 +626,14 @@ def test_header_read_exhaustion_is_raised_not_swallowed(tmp_path):
         for f in held:
             f.close()
         resource.setrlimit(resource.RLIMIT_NOFILE, (soft, hard))
+
+
+def test_corrupt_error_type_is_kept_when_the_path_is_rewritten(tmp_path):
+    """Rewriting the temp path out of a message keeps the classified type."""
+    from biosigio.importers.brainvision import brainvision_read_error
+
+    used = str(tmp_path / "biosigio-vhdr-x" / f"{STEM}.vhdr")
+    real = str(tmp_path / f"{STEM}.vhdr")
+    err = brainvision_read_error(OSError(f"{used}: file is truncated"), used, real)
+    assert type(err) is CorruptFileError
+    assert used not in str(err) and real in str(err)

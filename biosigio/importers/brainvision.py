@@ -19,7 +19,7 @@ from collections.abc import Iterator
 import pandas as pd
 
 from ..core.emg import Recording
-from ..exceptions import classify_read_error, is_resource_exhaustion
+from ..exceptions import BiosigIOError, classify_read_error, is_resource_exhaustion
 from ._mne_common import raw_to_recording, require_mne
 from .base import BaseImporter
 
@@ -293,6 +293,35 @@ def resolved_vhdr(vhdr_path: str, *, substitutions: dict | None = None) -> Itera
         yield tmp_vhdr
 
 
+def brainvision_read_error(exc: Exception, used_vhdr: str, vhdr_path: str) -> BiosigIOError:
+    """Type a BrainVision read failure, naming the real header, not the temp copy.
+
+    The error is classified by :func:`~biosigio.exceptions.classify_read_error`
+    (the caller guards resource exhaustion first). When MNE read a patched copy
+    from :func:`resolved_vhdr`, its message quotes the temporary
+    ``biosigio-vhdr-*`` path, which is deleted on exit; that path is replaced
+    with ``vhdr_path`` so the error points at a file that exists.
+    """
+    typed = classify_read_error(exc, vhdr_path)
+    if os.path.abspath(used_vhdr) == os.path.abspath(vhdr_path):
+        return typed
+    message = str(typed)
+    real_dir = os.path.dirname(os.path.abspath(vhdr_path))
+    tmp_dir = os.path.dirname(used_vhdr)
+    # Longest first, so a file path is replaced before the directory inside it.
+    replacements = [
+        (os.path.realpath(used_vhdr), vhdr_path),
+        (used_vhdr, vhdr_path),
+        (os.path.realpath(tmp_dir), real_dir),
+        (tmp_dir, real_dir),
+    ]
+    for old, new in sorted(replacements, key=lambda pair: len(pair[0]), reverse=True):
+        message = message.replace(old, new)
+    if message == str(typed):
+        return typed
+    return type(typed)(message)
+
+
 class BrainVisionImporter(BaseImporter):
     """Importer for BrainVision recordings via MNE-Python (.vhdr)."""
 
@@ -346,7 +375,7 @@ class BrainVisionImporter(BaseImporter):
                 # read failure (see biosigio.exceptions.is_resource_exhaustion).
                 if is_resource_exhaustion(e):
                     raise
-                raise classify_read_error(e, filepath) from e
+                raise brainvision_read_error(e, vhdr, filepath) from e
 
         rec = raw_to_recording(raw)
         rec.set_metadata("source_file", filepath)
