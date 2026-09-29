@@ -60,6 +60,7 @@ import numpy as np
 
 from ..bids import apply_channels_tsv_to_stream, resolve_channels_tsv
 from ..core.modality import infer_modality_from_channel_type
+from ..exceptions import is_resource_exhaustion
 from ..importers._mne_common import _FIFF_UNIT_TO_DIM, _MNE_TYPE_TO_biosigIO, require_mne
 from ..tabular_schema import metadata_to_mapping
 from ..version import __version__ as _BIOSIGIO_VERSION
@@ -361,14 +362,26 @@ def _open_stream_source(filepath: str, force_modality: str | None):
         raw = mne.io.read_raw_mef(filepath, preload=False, verbose="ERROR")
         return _MneSource(filepath, force_modality, raw=raw)
     if ext == ".vhdr":
-        # Same stale DataFile=/MarkerFile= recovery as the in-memory importer,
-        # recorded in the store's metadata the same way.
-        from ..importers.brainvision import HEADER_RECOVERED_KEY, resolved_vhdr
+        # Same stale DataFile=/MarkerFile= recovery, and the same error typing, as
+        # the in-memory importer (BrainVisionImporter.load): the resolver stays
+        # OUTSIDE the try, so a host failure writing its temp copy propagates raw,
+        # while a reader failure is typed (a corrupt header is terminal, not
+        # retried forever) and names the real header rather than the temp copy.
+        from ..importers.brainvision import (
+            HEADER_RECOVERED_KEY,
+            brainvision_read_error,
+            resolved_vhdr,
+        )
 
         mne = require_mne()
         recovered: dict = {}
         with resolved_vhdr(filepath, substitutions=recovered) as vhdr:
-            raw = mne.io.read_raw_brainvision(vhdr, preload=False, verbose="ERROR")
+            try:
+                raw = mne.io.read_raw_brainvision(vhdr, preload=False, verbose="ERROR")
+            except Exception as e:
+                if is_resource_exhaustion(e):
+                    raise
+                raise brainvision_read_error(e, vhdr, filepath) from e
         return _MneSource(
             filepath,
             force_modality,
