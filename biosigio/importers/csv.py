@@ -179,6 +179,14 @@ class CSVImporter(BaseImporter):
                 # Filter by column names
                 df = df[columns]
 
+        # A repeated header is renamed by pandas ("EMG", "EMG.1"), but a
+        # repeated name in channel_names or columns reaches here intact, and
+        # each channel is added by name: fail with the names rather than with
+        # pandas' "Data must be 1-dimensional".
+        if df.columns.has_duplicates:
+            repeated = list(dict.fromkeys(df.columns[df.columns.duplicated()]))
+            raise ValueError(f"CSV channel names must be unique; repeated: {repeated}")
+
         # Handle time column
         if time_column is not None:
             # If time_column is an index, convert to column name
