@@ -22,6 +22,11 @@ from .base import BaseImporter
 
 # ``DataFile=`` / ``MarkerFile=`` lines of the header's [Common Infos] section.
 _FILE_REF = re.compile(r"^(\s*)(DataFile|MarkerFile)(\s*=\s*)(.*?)(\s*)$", re.IGNORECASE)
+# Split after each ``\n`` and after a lone ``\r`` (old Mac line endings), keeping
+# the ending on its line. Unlike ``str.splitlines`` this never breaks on ``\x85``,
+# ``\x0b``, ``\x0c`` or `` ``, which a Latin-1/cp1252 header can carry inside a
+# channel name and which MNE's own line reading (``StringIO``) does not split on.
+_LINE_BREAK = re.compile(r"(?<=\n)|(?<=\r)(?!\n)")
 # Same-stem siblings tried for each key, in order (``.dat`` is the legacy data name).
 # MarkerFile is patched too: MNE 1.13 recovers a stale MarkerFile= itself, but the
 # 1.12.x line NEMAR runs does not (on002158 fails at ``open(mrk_fname)`` with
@@ -73,7 +78,7 @@ def resolved_vhdr(vhdr_path: str) -> Iterator[str]:
         yield vhdr_path
         return
     encoding = _header_encoding(content)
-    lines = content.decode(encoding).splitlines(keepends=True)
+    lines = _LINE_BREAK.split(content.decode(encoding))
 
     stale = False
     section = ""
