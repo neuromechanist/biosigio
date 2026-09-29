@@ -170,3 +170,59 @@ def test_zarr_store_with_duplicate_labels_reimports(tmp_path, caplog):
     assert signals is not None
     np.testing.assert_allclose(rt.signals["T8-P8-0"].to_numpy(), signals["T8-P8"].to_numpy())
     np.testing.assert_allclose(rt.signals["T8-P8-1"].to_numpy(), signals["T8-P8x"].to_numpy())
+
+
+def test_tolerant_fallback_keeps_duplicate_labels(tmp_path):
+    """A duplicate-label file that also needs the tolerant fallback loads.
+
+    MNE renames the repeats ``EEG-0``/``EEG-1``; the fallback pairs header rows
+    by position, so each repeat keeps its own row's scaling and data, and the
+    labels match what a normal (pyedflib) read of the same file produces. The
+    file is EDF+ with an annotation, so the hidden annotations channel sits in
+    the header too and must be skipped when pairing.
+    """
+    pytest.importorskip("mne", reason="the tolerant fallback reads through MNE")
+    from biosigio.tests.test_edf_fallback import _channel, _patch_signal_field
+    from biosigio.tests.test_edf_fallback import _write_edf as _write_edf_plus
+
+    path = os.path.join(tmp_path, "dup_degenerate.edf")
+    rng = np.random.default_rng(133)
+    n = 300
+    channels = [
+        _channel("EEG", 100.0, -200.0, 200.0),
+        _channel("REF", 100.0, -200.0, 200.0),
+        _channel("EEG", 100.0, -500.0, 500.0),
+    ]
+    data = [rng.uniform(-200, 200, n), rng.uniform(-200, 200, n), rng.uniform(-500, 500, n)]
+    _write_edf_plus(path, channels, data, annotations=[(0.5, 0.0, "stim")])
+
+    # Normal read first, while the file is still compliant: the reference
+    # labels and the ground-truth samples by header position.
+    normal = Recording.from_file(path)
+    assert list(normal.channels) == ["EEG-0", "REF", "EEG-1"]
+    with pyedflib.EdfReader(path) as reader:
+        truth = [reader.readSignal(i) for i in range(reader.signals_in_file)]
+
+    _patch_signal_field(path, 1, "physical_max", b"-200")
+    with pytest.raises(OSError, match=r"(?i)physical maximum"):
+        pyedflib.EdfReader(path)
+
+    rec = Recording.from_file(path, importer="edf")
+
+    assert rec.metadata["edf_tolerant_read"] is True
+    assert list(rec.channels) == ["EEG-0", "REF", "EEG-1"]
+    np.testing.assert_allclose(rec.signals["EEG-0"].to_numpy(), truth[0], rtol=1e-9)
+    np.testing.assert_allclose(rec.signals["EEG-1"].to_numpy(), truth[2], rtol=1e-9)
+    assert rec.channels["EEG-0"]["physical_max"] == 200.0
+    assert rec.channels["EEG-1"]["physical_max"] == 500.0
+    np.testing.assert_array_equal(rec.signals["REF"].to_numpy(), np.full(n, -200.0))
+    assert list(rec.events["description"]) == ["stim"]
+
+    # The streaming source goes through the same fallback and names alike.
+    from biosigio.exporters.zarr_stream import _EdfSource
+
+    source = _EdfSource(path, force_modality="EEG")
+    try:
+        assert [c["label"] for c in source.channels] == ["EEG-0", "REF", "EEG-1"]
+    finally:
+        source.close()
