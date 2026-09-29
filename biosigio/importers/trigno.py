@@ -48,6 +48,9 @@ class TrignoImporter(BaseImporter):
 
         Returns:
             Dictionary containing channel information
+
+        Raises:
+            ValueError: If two ``Label:`` lines name the same channel.
         """
         channel_info = {}
 
@@ -63,6 +66,17 @@ class TrignoImporter(BaseImporter):
                 # Extract unit
                 unit = line[line.find("Unit:") + 5 : line.find("Domain")].strip()
 
+                # Each data column is matched to its metadata by label, and pandas
+                # renames a repeated column header ("EMG 1" -> "EMG 1.1"), so a
+                # second channel under the same label would match nothing and be
+                # dropped. Delsys labels carry the sensor number, so this does not
+                # happen in files Trigno writes; refuse rather than lose a channel.
+                if name_part in channel_info:
+                    raise ValueError(
+                        f"Trigno metadata repeats the channel label {name_part!r}; "
+                        "channels are matched to their data columns by label, so a "
+                        "repeated label cannot be imported without losing a channel"
+                    )
                 channel_info[name_part] = {
                     "sample_frequency": sampling_freq,
                     "physical_dimension": unit,
