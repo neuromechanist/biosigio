@@ -89,6 +89,7 @@ def _write_v73_set(
     condition=None,
     session=None,
     comments=None,
+    flat=False,
 ):
     """Write a MATLAB-v7.3-shaped ``.set``: a MAT text header + an HDF5 body.
 
@@ -125,12 +126,17 @@ def _write_v73_set(
         setname, subject, group_name, condition, session, comments: Top-level
             EEG string metadata fields, written as direct char-code (uint16)
             datasets, same as the ``data_filename`` char array.
+        flat: If True, writes the struct's fields directly at the HDF5 root
+            with no ``EEG`` group, the flat layout EEGLAB can also save.
     """
     inner_path = path + ".inner"
     with h5py.File(inner_path, "w") as f:
         refs = f.create_group("#refs#")
-        eeg = f.create_group("EEG")
-        eeg.attrs["MATLAB_class"] = np.bytes_(b"struct")
+        if flat:
+            eeg = f
+        else:
+            eeg = f.create_group("EEG")
+            eeg.attrs["MATLAB_class"] = np.bytes_(b"struct")
         eeg.create_dataset("nbchan", data=np.array([[float(header_nbchan or nbchan)]]))
         eeg.create_dataset("srate", data=np.array([[float(srate)]]))
         eeg.create_dataset("pnts", data=np.array([[float(pnts)]]))
@@ -322,6 +328,76 @@ def test_v73_non_eeg_top_level_raises_corrupt_file_error(tmp_path):
         fh.write(_wrap_matlab_v73_header(body))
 
     assert _is_matlab_v73(path) is True  # magic still says v7.3
+    with pytest.raises(CorruptFileError):
+        EEGLABImporter().load(path)
+
+
+def test_v73_flat_root_struct_loads(tmp_path):
+    """EEGLAB's flat v7.3 layout (fields at the HDF5 root, no `EEG` group)
+    is valid and loads, not reported as corrupt."""
+    path = str(tmp_path / "flat.set")
+    nbchan, pnts, srate = 3, 17, 250.0
+    data = np.zeros((nbchan, pnts), dtype=np.float32)
+    data[0] = np.arange(pnts)
+    _write_v73_set(
+        path,
+        nbchan=nbchan,
+        pnts=pnts,
+        srate=srate,
+        data=data,
+        labels=["Fz", "Cz", "Pz"],
+        events=[{"latency": 11, "type": "stim"}],
+        flat=True,
+    )
+
+    rec = EEGLABImporter().load(path)
+
+    assert rec.signals.shape == (pnts, nbchan)
+    assert list(rec.signals.columns) == ["Fz", "Cz", "Pz"]
+    assert rec.get_metadata("srate") == srate
+    assert rec.get_metadata("nbchan") == nbchan
+    np.testing.assert_array_equal(rec.signals["Fz"].to_numpy(), np.arange(pnts))
+    assert list(rec.events["description"]) == ["stim"]
+
+
+def test_v73_flat_root_struct_companion_fdt_resolved(tmp_path):
+    """The flat layout still resolves the sibling `.fdt` over a stale
+    embedded name, same as the `EEG`-group layout."""
+    nbchan, pnts, srate = 2, 30, 100.0
+    data = np.arange(nbchan * pnts, dtype=np.float32).reshape(nbchan, pnts)
+    data.flatten(order="F").tofile(str(tmp_path / "sub-01_eeg.fdt"))
+
+    set_path = str(tmp_path / "sub-01_eeg.set")
+    _write_v73_set(
+        set_path,
+        nbchan=nbchan,
+        pnts=pnts,
+        srate=srate,
+        data_filename="original_name_before_bids.fdt",
+        flat=True,
+    )
+
+    rec = EEGLABImporter().load(set_path)
+
+    assert rec.signals.shape == (pnts, nbchan)
+    for i, label in enumerate(rec.signals.columns):
+        np.testing.assert_array_equal(rec.signals[label].to_numpy(), data[i])
+
+
+def test_v73_root_without_core_fields_raises_corrupt_file_error(tmp_path):
+    """A root with some struct-like fields but not all of nbchan/srate/data
+    is neither layout, so it keeps the typed corrupt-file error."""
+    path = str(tmp_path / "partial_root.set")
+    inner_path = path + ".inner"
+    with h5py.File(inner_path, "w") as f:
+        f.create_dataset("nbchan", data=np.array([[2.0]]))
+        f.create_dataset("srate", data=np.array([[100.0]]))
+    with open(inner_path, "rb") as fh:
+        body = fh.read()
+    os.remove(inner_path)
+    with open(path, "wb") as fh:
+        fh.write(_wrap_matlab_v73_header(body))
+
     with pytest.raises(CorruptFileError):
         EEGLABImporter().load(path)
 

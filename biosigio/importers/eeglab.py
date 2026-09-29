@@ -533,12 +533,19 @@ class EEGLABImporter(BaseImporter):
         h5py = require_h5py()
         try:
             with h5py.File(filepath, "r") as f:
-                if "EEG" not in f:
+                # EEGLAB can also save the struct's fields FLAT at the HDF5
+                # root (no `EEG` group); the classic loadmat path already
+                # accepts that layout, so treat the root as the struct when
+                # it carries the core fields rather than calling it corrupt.
+                if "EEG" in f:
+                    eeg = f["EEG"]
+                elif all(key in f for key in ("nbchan", "srate", "data")):
+                    eeg = f
+                else:
                     raise ValueError(
                         f"MATLAB v7.3 file is missing the top-level 'EEG' struct; "
                         f"the file may be corrupt ({filepath})"
                     )
-                eeg = f["EEG"]
 
                 # nbchan/srate/pnts/trials come back as float arrays (see
                 # `_h5_scalar`), so they are flattened and coerced to the
