@@ -248,3 +248,29 @@ def test_unreadable_header_yields_original_without_chained_context(tmp_path):
     assert info.value.__context__ is None
     with pytest.raises(Exception, match="absent"):
         Recording.from_file(missing)
+
+
+def test_path_outside_the_codepage_is_written_as_utf8(tmp_path):
+    """A cp1252 header whose siblings live under a Greek directory name: the patched
+    copy is UTF-8, declares ``Codepage=UTF-8`` and keeps CRLF, instead of silently
+    falling back to the stale header."""
+    directory = tmp_path / "données_Ωμέγα"
+    directory.mkdir()
+    vhdr, data = _write_triplet(
+        directory, "old.eeg", "old.vmrk", newline="\r\n", codepage="ANSI", encoding="cp1252"
+    )
+    original = open(vhdr, "rb").read().decode("cp1252")
+    with resolved_vhdr(vhdr) as used:
+        assert used != vhdr
+        patched = open(used, "rb").read()
+    expected = (
+        original.replace("Codepage=ANSI", "Codepage=UTF-8")
+        .replace("DataFile=old.eeg", f"DataFile={directory / (STEM + '.eeg')}")
+        .replace("MarkerFile=old.vmrk", f"MarkerFile={directory / (STEM + '.vmrk')}")
+        .encode("utf-8")
+    )
+    assert patched == expected
+    rec = Recording.from_file(vhdr)
+    _assert_loaded(rec, data)
+    assert "C1é" in rec.channels
+    _assert_streams(vhdr, data)
