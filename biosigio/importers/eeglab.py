@@ -476,7 +476,14 @@ class EEGLABImporter(BaseImporter):
 
         Returns one flat dict per element (channel/event), mapping field name
         to its dereferenced value.
+
+        An EMPTY struct array (``EEG.chanlocs = []`` or ``EEG.event = []``) is
+        not a group at all: MATLAB stores it as a ``uint64`` dims dataset
+        flagged ``MATLAB_empty``, the same marker :meth:`_deref_h5_value`
+        treats as "no value". That yields no elements, not an error.
         """
+        if not isinstance(group, h5py_mod.Group) or group.attrs.get("MATLAB_empty"):
+            return []
         field_values: dict[str, list[Any]] = {}
         n = 0
         for field in group.keys():
