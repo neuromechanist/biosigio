@@ -11,6 +11,7 @@ the samples behind each label survive. The EDF/BDF side lives in
 import struct
 
 import numpy as np
+import pandas as pd
 import pytest
 
 from biosigio import Recording
@@ -270,3 +271,22 @@ def test_edf_export_keeps_labels_distinct_after_truncation(tmp_path):
         np.testing.assert_allclose(
             back.signals[new].to_numpy(), rec.signals[old].to_numpy(), atol=0.05
         )
+
+
+def test_edf_export_channels_tsv_names_the_written_labels(tmp_path):
+    """The sidecar names each channel as the file stores it, so it applies on re-import."""
+    labels = [f"Mini sensor 10: ACC.{axis} 10" for axis in "XY"]
+    rec = TrignoImporter().load(_write_trigno(tmp_path / "acc.csv", labels, n_points=300))
+    for label in labels:
+        rec.set_channel(label, channel_type="EMG")
+
+    with pytest.warns(UserWarning, match="not unique once truncated"):
+        rec.to_edf(str(tmp_path / "acc.edf"), format="edf")
+
+    sidecar = pd.read_csv(tmp_path / "acc_channels.tsv", sep="\t")
+    assert list(sidecar["name"]) == ["Mini sensor 10-0", "Mini sensor 10-1"]
+    # A curator's edit to the sidecar reaches the channels on re-import.
+    sidecar["type"] = "EOG"
+    sidecar.to_csv(tmp_path / "acc_channels.tsv", sep="\t", index=False)
+    back = Recording.from_file(str(tmp_path / "acc.edf"))
+    assert [info["channel_type"] for info in back.channels.values()] == ["EOG", "EOG"]
