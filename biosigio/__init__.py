@@ -14,6 +14,7 @@ from .exceptions import (
     NotContinuousRecordingError,
     UnsupportedFormatError,
     classify_read_error,
+    is_host_condition,
     is_resource_exhaustion,
 )
 from .exporters.edf import EDFExporter
@@ -34,6 +35,7 @@ __all__ = [
     "EmptyRecordingError",
     "MixedSamplingRateError",
     "classify_read_error",
+    "is_host_condition",
     "is_resource_exhaustion",
     "REASONS",
     "__version__",

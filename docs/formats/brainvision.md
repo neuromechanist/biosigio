@@ -32,7 +32,7 @@ A successful recovery is logged at info level and recorded in the recording's me
 
 A header whose references all exist is passed to MNE unchanged, and so is one where neither the named file nor a same-stem sibling exists, so that MNE reports the missing file. In rare cases the siblings exist but no header encoding can spell their path (a directory name holding bytes that are not valid UTF-8); the read then raises `BrainVisionHeaderRecoveryError`, which says so. It is deliberately not a `BiosigIOError`: the recording is readable, and what failed is spelling this host's path to it.
 
-Read errors are typed the same way on both paths: the importer and the streaming export classify an MNE failure with `classify_read_error`, so a corrupt header raises a `FileReadError` (or a subclass) from either path, and a message that quoted the temporary header copy names the real `.vhdr` instead.
+Read errors are typed the same way on both paths: the importer and the streaming export classify an MNE failure with `classify_read_error`, so a corrupt header raises a `FileReadError` (or a subclass) from either path, and a message that quoted the temporary header copy names the real `.vhdr` instead. An error the operating system raises for this host rather than for the file (permission denied, an I/O error, a full disk, a stale network handle) is not typed: it propagates as the raw `OSError`, as it does from every importer (see `biosigio.is_host_condition`).
 
 ## Loading Data
 

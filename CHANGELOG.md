@@ -21,7 +21,22 @@ which keep the full notes; releases older than 1.1.0 are listed there only.
 - EDF/BDF files that repeat a channel label now import with suffixed labels (see Changed),
   so a Zarr store regenerated from such a file has different channel names than one published before.
 
+### Added
+
+- `is_host_condition(exc)`, exported from `biosigio`: true for resource exhaustion
+  and for an `OSError` whose `errno` is `EACCES`, `EPERM`, `EIO`, `ENOSPC`, `EROFS`,
+  `EDQUOT`, `ETIMEDOUT` or `ESTALE`, including one chained behind a wrapper.
+
 ### Fixed
+
+- Host I/O errors are no longer reported as file failures.
+  `classify_read_error` re-raises any exception `is_host_condition` accepts unchanged,
+  so every importer and the streaming Zarr export raise a permission, disk or network-filesystem error
+  as the operating system's own `OSError`, never as a `FileReadError` that a caller would treat as permanent.
+  EDF/BDF: pyedflib reports a refused open without its `errno`,
+  so the importer and the streaming source reopen the file to raise the real error.
+  EEGLAB: an unreadable classic `.set` is no longer retried as `<name>.set.mat`,
+  which turned a permission error into a missing-file error.
 
 - EEGLAB: MATLAB v7.3 (HDF5) `.set` files that store the struct's fields flat at the HDF5 root,
   with no `EEG` group, are read instead of being reported as corrupt.

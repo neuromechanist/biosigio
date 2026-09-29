@@ -799,8 +799,10 @@ class EEGLABImporter(BaseImporter):
             # Load the .set file. A real EEGLAB export wraps every field in a
             # single ``EEG`` struct, so unwrap it to the flat top-level form that
             # the metadata/signal/channel/event reads below expect (a no-op for
-            # files already saved flat).
-            data = self._normalize_eeglab_dict(loadmat(filepath))
+            # files already saved flat). appendmat=False: on ANY failed open
+            # scipy otherwise retries with ".mat" appended, so an unreadable
+            # (EACCES) .set would surface as ENOENT on a ".set.mat" nobody named.
+            data = self._normalize_eeglab_dict(loadmat(filepath, appendmat=False))
 
             # Create Recording object
             rec = Recording()

@@ -34,6 +34,7 @@ from biosigio.exceptions import (
     NotContinuousRecordingError,
     UnsupportedFormatError,
     classify_read_error,
+    is_host_condition,
     is_resource_exhaustion,
 )
 
@@ -279,6 +280,57 @@ def test_classify_read_error_negative_case_enoent_still_classifies_as_read_error
     err = classify_read_error(OSError(errno.ENOENT, "No such file or directory"), "/x/missing.edf")
     assert type(err) is FileReadError
     assert err.code == "file_read_error"
+
+
+# -- host I/O errors are the host, not the file: re-raised, never typed --------
+
+_HOST_IO = [
+    errno.EACCES,
+    errno.EPERM,
+    errno.EIO,
+    errno.ENOSPC,
+    errno.EROFS,
+    errno.ETIMEDOUT,
+    *(code for code in (getattr(errno, "EDQUOT", None), getattr(errno, "ESTALE", None)) if code),
+]
+
+
+@pytest.mark.parametrize("code", _HOST_IO, ids=[errno.errorcode[c] for c in _HOST_IO])
+def test_classify_read_error_reraises_host_io_errors(code):
+    exc = OSError(code, os.strerror(code), "/data/sub-01_eeg.edf")
+    assert is_host_condition(exc) is True
+    with pytest.raises(OSError) as info:
+        classify_read_error(exc, "/data/sub-01_eeg.edf")
+    assert info.value is exc
+
+
+def test_host_condition_is_found_behind_a_wrapper():
+    """A reader that wraps the OS error (``raise ValueError(...) from err``) is
+    still a host condition, and the wrapper is re-raised as-is."""
+    outer = ValueError("could not open recording")
+    outer.__cause__ = PermissionError(errno.EACCES, "Permission denied")
+    assert is_host_condition(outer) is True
+    with pytest.raises(ValueError) as info:
+        classify_read_error(outer)
+    assert info.value is outer
+
+
+def test_host_condition_includes_resource_exhaustion():
+    assert is_host_condition(MemoryError()) is True
+
+
+@pytest.mark.parametrize(
+    "exc",
+    [
+        OSError(errno.ENOENT, "No such file or directory"),
+        OSError("the file is not EDF(+) or BDF(+) compliant (Filesize)"),  # no errno
+        ValueError("header is corrupt"),
+    ],
+    ids=["enoent", "errno-less-oserror", "valueerror"],
+)
+def test_file_problems_are_not_host_conditions(exc):
+    assert is_host_condition(exc) is False
+    assert isinstance(classify_read_error(exc), FileReadError)
 
 
 # -- typed errors are ValueErrors (back-compat) + have stable codes ------------

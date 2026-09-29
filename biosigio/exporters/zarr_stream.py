@@ -233,7 +233,11 @@ class _EdfSource:
         import pyedflib
 
         from ..exceptions import MixedSamplingRateError
-        from ..importers._edf_tolerant import classify_pyedflib_error, read_edf_tolerant
+        from ..importers._edf_tolerant import (
+            classify_pyedflib_error,
+            raise_host_open_error,
+            read_edf_tolerant,
+        )
         from ..importers._labels import DEDUPLICATED_LABELS_KEY, unique_channel_labels
         from ..importers.edf import EDFImporter
 
@@ -246,6 +250,9 @@ class _EdfSource:
         try:
             reader = pyedflib.EdfReader(filepath)
         except Exception as open_exc:
+            # Same as the importer: an OS refusal pyedflib hid is raised as the
+            # real OSError rather than pyedflib's errno-less one.
+            raise_host_open_error(filepath, open_exc)
             reason = classify_pyedflib_error(open_exc)
             if reason is None:
                 raise
