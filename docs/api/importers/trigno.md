@@ -57,6 +57,9 @@ The Trigno importer automatically detects channel types based on channel names:
 
 Per-channel sampling frequency and units are read from the file's `Label: ...`
 header lines, so no manual header/delimiter arguments are required.
+A label that repeats is matched to its columns by position, each column taking its own `Label:` line;
+`load()` raises `ValueError` if such a file's header line does not have one field per data column
+(see [the Trigno format page](../../formats/trigno.md#notes-and-limitations)).
 
 ## Return Value
 

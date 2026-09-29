@@ -90,6 +90,7 @@ What changed in each release is recorded in the [changelog](https://github.com/n
 `Recording.select_channels` raises `ValueError` for a name listed twice (and now accepts any iterable of names);
 the Parquet/Arrow importer raises `ValueError` for a Feather/Arrow table that repeats a column name;
 EDF/BDF export numbers labels that collide once truncated to 16 characters;
+a Delsys Trigno file that repeats a `Label:` line keeps every column, each with its own line's rate and unit, and is refused if its header does not have one field per column;
 XDF, neo and EEGLAB suffixes for repeated labels never take a label the file genuinely uses, so a label such as `Ch1_1` can now point at a different signal;
 a `channels.tsv` row matched to its channel case-insensitively now applies its type and unit, which can convert the signal;
 and, for anyone upgrading from before 1.2.9, `Recording.add_channel` still raises for a label that already exists (below).

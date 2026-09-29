@@ -42,6 +42,11 @@ to defer, pin `biosigio==1.2.9`, since a `~=1.2.9` or `<1.3` pin takes 1.2.10 au
   under numbered labels (`Mini sensor 10-0`, `Mini sensor 10-1`; see Fixed),
   and names their `_channels.tsv` rows the same way,
   so such a file exported by 1.2.10 carries different channel labels and sidecar names than one exported by 1.2.9.
+- Delsys Trigno files whose `Label:` lines repeat a label (see Fixed):
+  the first column under that label now takes its own `Label:` line's rate and unit, where 1.2.9 gave it the last line's,
+  and the later columns are imported as new, suffixed channels.
+  Such a file is matched to its columns by position, so one whose header line (the line with `X[s]`)
+  does not have one field per data column now raises `ValueError`, where 1.2.9 imported the first column under each label.
 - `apply_channels_tsv` and `apply_channels_tsv_to_stream` now apply a sidecar row that differs from its channel only in case
   (see Fixed, [#136](https://github.com/neuromechanist/biosigio/issues/136)).
   In 1.2.9 such a row was silently skipped; now its type and unit are applied, and a unit that differs from the data file's CONVERTS the signal,
@@ -66,10 +71,11 @@ to defer, pin `biosigio==1.2.9`, since a `~=1.2.9` or `<1.3` pin takes 1.2.10 au
 - neo: the same rule for names repeated across merged streams:
   streams naming `x_0`, `x_0` and `x_0_0` import as `x_0`, `x_0_1`, `x_0_0` rather than `x_0`, `x_0_0`, `x_0_0_0`.
 - Delsys Trigno: a file whose `Label:` lines repeat a label keeps every channel,
-  where 1.2.9 imported only the first column under that label.
-  The n-th column headed with the label takes the n-th `Label:` line's rate and unit;
+  where 1.2.9 imported only the first column under that label
+  and gave it the rate and unit of the LAST `Label:` line with that label.
+  Now the n-th column headed with the label takes the n-th `Label:` line's rate and unit;
   later occurrences are suffixed `_1`, `_2`, ... (never onto a label the file uses) and logged.
-  Files with unique labels, which is every file Trigno writes, import exactly as before.
+  Files with unique labels, such as the bundled Delsys export, whose labels carry the sensor number, import exactly as before.
 - EDF/BDF export: labels that are no longer unique once truncated to the 16-character field
   (all channels of one Trigno sensor, for example) are numbered within the field (`Mini sensor 10-0`, `Mini sensor 10-1`)
   with a warning, instead of being written under one repeated label.
