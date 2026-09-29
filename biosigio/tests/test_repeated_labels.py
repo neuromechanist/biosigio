@@ -344,3 +344,50 @@ def test_edf_export_channels_tsv_names_the_written_labels(tmp_path):
     sidecar.to_csv(tmp_path / "acc_channels.tsv", sep="\t", index=False)
     back = Recording.from_file(str(tmp_path / "acc.edf"))
     assert [info["channel_type"] for info in back.channels.values()] == ["EOG", "EOG"]
+
+
+def test_edf_export_channels_tsv_keeps_full_label_when_truncation_stays_unique(tmp_path):
+    """A long label that stays unique once truncated keeps its full sidecar name, as in 1.2.9."""
+    labels = ["Mini sensor 10: EMG 10", "Long channel name 2 xyz", "Cz"]
+    rec = TrignoImporter().load(_write_trigno(tmp_path / "long.csv", labels, n_points=300))
+
+    rec.to_edf(str(tmp_path / "long.edf"), format="edf")
+
+    sidecar = pd.read_csv(tmp_path / "long_channels.tsv", sep="\t")
+    assert list(sidecar["name"]) == labels
+    back = Recording.from_file(str(tmp_path / "long.edf"), bids_channels="off")
+    assert list(back.channels) == ["Mini sensor 10:", "Long channel nam", "Cz"]
+
+
+def test_edf_export_channels_tsv_renames_only_the_colliding_rows(tmp_path):
+    """Colliding rows take the distinct written labels; the rest keep their full labels."""
+    labels = [
+        "Mini sensor 10: ACC.X 10",
+        "Long channel name 2 xyz",
+        "Mini sensor 10: ACC.Y 10",
+        "Cz",
+    ]
+    rec = TrignoImporter().load(_write_trigno(tmp_path / "mix.csv", labels, n_points=300))
+
+    with pytest.warns(UserWarning, match="not unique once truncated"):
+        rec.to_edf(str(tmp_path / "mix.edf"), format="edf")
+
+    sidecar = pd.read_csv(tmp_path / "mix_channels.tsv", sep="\t")
+    assert list(sidecar["name"]) == [
+        "Mini sensor 10-0",
+        "Long channel name 2 xyz",
+        "Mini sensor 10-1",
+        "Cz",
+    ]
+    # The renamed rows match the labels the file stores, so a curator's edit applies.
+    sidecar.loc[sidecar["name"].str.startswith("Mini sensor 10-"), "type"] = "EOG"
+    sidecar.to_csv(tmp_path / "mix_channels.tsv", sep="\t", index=False)
+    back = Recording.from_file(str(tmp_path / "mix.edf"))
+    assert list(back.channels) == [
+        "Mini sensor 10-0",
+        "Long channel nam",
+        "Mini sensor 10-1",
+        "Cz",
+    ]
+    assert back.channels["Mini sensor 10-0"]["channel_type"] == "EOG"
+    assert back.channels["Mini sensor 10-1"]["channel_type"] == "EOG"

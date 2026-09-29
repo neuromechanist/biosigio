@@ -586,11 +586,16 @@ class EDFExporter:
                 }
                 channel_info_list.append(ch_dict)
 
-                # Add to BIDS-compliant channels.tsv data
-                # BIDS matches a channels.tsv row to the data file by the label
-                # the file stores, so name the row that way; the full label only
-                # matched on channels that fit the 16-character field.
-                channels_tsv_data["name"].append(edf_labels[ch_index])
+                # Add to BIDS-compliant channels.tsv data. A row keeps the
+                # channel's full label, as released, even when the file stores it
+                # truncated; only a channel whose truncated label collided, and
+                # so was numbered, is named by the label written to the file,
+                # because its full label no longer tells its row apart from the
+                # other channels that share the truncated stem.
+                written = edf_labels[ch_index]
+                channels_tsv_data["name"].append(
+                    written.rstrip() if written in label_renames else ch_name
+                )
 
                 # Channels carry a validated channel_type from the modality
                 # vocabulary, so use it directly for channels.tsv. This preserves
