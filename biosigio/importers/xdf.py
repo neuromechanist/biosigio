@@ -14,6 +14,7 @@ import pandas as pd
 
 from ..core.emg import Recording
 from ..core.modality import infer_modality_from_channel_type, validate_channel_type
+from ._labels import DEDUPLICATED_LABELS_KEY, suffix_repeated_labels
 from .base import BaseImporter
 
 logger = logging.getLogger(__name__)
@@ -462,6 +463,15 @@ class XDFImporter(BaseImporter):
             - The max_memory_gb parameter can warn or raise if estimated memory
               usage exceeds the limit.
 
+        Repeated labels:
+            Streams often share channel labels (two amplifiers each with
+            ``Ch1``), and a Recording is keyed by label. The first occurrence
+            keeps its label; each later one becomes ``<label>_1``, ``<label>_2``,
+            ... in stream order, never taking a label some stream really uses.
+            The renames are logged with their stream names and recorded as
+            ``{new_label: original_label}`` under the recording metadata key
+            ``channel_labels_deduplicated``.
+
         Args:
             filepath: Path to the XDF file
             stream_names: List of stream names to import (case-insensitive)
@@ -476,7 +486,10 @@ class XDFImporter(BaseImporter):
                                named "{stream_name}_LSL_timestamps" containing
                                the original LSL timestamps. Useful for preserving
                                timing information when exporting to formats like
-                               EDF that require regular sampling.
+                               EDF that require regular sampling. A name
+                               that is already taken (two streams sharing a
+                               name, or a channel of that name) gets a
+                               ``_1``, ``_2`` suffix like any repeated label.
             reference_stream: Optional stream name to use as the time base
                              reference. If not specified, the stream with the
                              highest sampling rate is used (recommended to
@@ -766,9 +779,11 @@ class XDFImporter(BaseImporter):
         base_srate = ref_stream_info["srate"]
         base_timestamps = cast(np.ndarray, ref_stream_info["timestamps"])
 
-        # Second pass: collect all channel data
-        all_data: dict[str, dict[str, Any]] = {}
-        stream_timestamp_data: dict[str, dict[str, Any]] = {}  # Store timestamp data per stream
+        # Second pass: collect every channel, in stream order, as a list rather
+        # than a dict keyed by label: two streams (or one) can carry the same
+        # label, and a dict would keep only the last of them.
+        entries: list[dict[str, Any]] = []
+        timestamp_entries: list[dict[str, Any]] = []
 
         for si in stream_info_list:
             stream_name = si["name"]
@@ -777,12 +792,17 @@ class XDFImporter(BaseImporter):
             srate = si["srate"]
             info = cast(dict[str, Any], si["info"])
 
-            # Store timestamp data for this stream if requested
+            # One timestamp channel per stream, not per stream NAME: two streams
+            # sharing a name each keep their own timestamps.
             if include_timestamps:
-                stream_timestamp_data[stream_name] = {
-                    "timestamps": timestamps,
-                    "srate": srate,
-                }
+                timestamp_entries.append(
+                    {
+                        "label": f"{stream_name}_LSL_timestamps",
+                        "stream": stream_name,
+                        "timestamps": timestamps,
+                        "srate": srate,
+                    }
+                )
 
             # Get channel info
             channel_labels, channel_types, channel_units = self._extract_channel_info(
@@ -793,25 +813,44 @@ class XDFImporter(BaseImporter):
             if time_series.ndim == 1:
                 time_series = time_series.reshape(-1, 1)
 
-            # Add channels
             for i, label in enumerate(channel_labels):
                 if i < time_series.shape[1]:
-                    # Make label unique if needed
-                    unique_label = label
-                    counter = 1
-                    while unique_label in all_data:
-                        unique_label = f"{label}_{counter}"
-                        counter += 1
+                    entries.append(
+                        {
+                            "label": label,
+                            "stream": stream_name,
+                            "data": time_series[:, i],
+                            "timestamps": timestamps,
+                            "srate": srate,
+                            "unit": channel_units[i] if i < len(channel_units) else "a.u.",
+                            "type": channel_types[i]
+                            if i < len(channel_types) and channel_types[i]
+                            else default_channel_type,
+                        }
+                    )
 
-                    all_data[unique_label] = {
-                        "data": time_series[:, i],
-                        "timestamps": timestamps,
-                        "srate": srate,
-                        "unit": channel_units[i] if i < len(channel_units) else "a.u.",
-                        "type": channel_types[i]
-                        if i < len(channel_types) and channel_types[i]
-                        else default_channel_type,
-                    }
+        # Labels must be unique: rec.channels and the signal frame are keyed by
+        # label. The first occurrence keeps its label and later ones become
+        # <label>_1, <label>_2, ..., the scheme this importer has always used,
+        # now choosing a suffix no stream uses as a real label. Timestamp
+        # channels come last, so a data channel keeps its label if a timestamp
+        # channel's name collides with it.
+        all_entries = entries + timestamp_entries
+        labels, renames = suffix_repeated_labels(
+            [e["label"] for e in all_entries], separator="_", start=1
+        )
+        if renames:
+            described = ", ".join(
+                f"{new!r} ({renames[new]!r} from stream {e['stream']!r})"
+                for new, e in zip(labels, all_entries, strict=True)
+                if new in renames
+            )
+            logger.warning(
+                "XDF channel labels are not unique in %s; renamed %s",
+                rec.get_metadata("source_file"),
+                described,
+            )
+            rec.set_metadata(DEDUPLICATED_LABELS_KEY, renames)
 
         # Create time index from reference stream
         # Convert to relative time starting from 0
@@ -829,7 +868,7 @@ class XDFImporter(BaseImporter):
         # Create DataFrame
         df = pd.DataFrame(index=time_index)
 
-        for label, ch_info in all_data.items():
+        for label, ch_info in zip(labels[: len(entries)], entries, strict=True):
             # Resample if needed (different stream lengths)
             ch_data = ch_info["data"]
             ch_timestamps = ch_info["timestamps"]
@@ -865,30 +904,28 @@ class XDFImporter(BaseImporter):
             }
 
         # Add timestamp channels if requested
-        if include_timestamps and stream_timestamp_data:
-            for stream_name, ts_info in stream_timestamp_data.items():
-                ts_label = f"{stream_name}_LSL_timestamps"
-                original_timestamps = ts_info["timestamps"]
+        for ts_label, ts_info in zip(labels[len(entries) :], timestamp_entries, strict=True):
+            original_timestamps = ts_info["timestamps"]
 
-                # Resample timestamps to match the common time index
-                if len(original_timestamps) == 0:
-                    # No timestamps available; create a NaN-filled array
-                    resampled_ts = np.full(len(time_index), np.nan, dtype=float)
-                elif len(original_timestamps) != len(time_index):
-                    relative_ts = original_timestamps - original_timestamps[0]
-                    resampled_ts = np.interp(time_index, relative_ts, original_timestamps)
-                else:
-                    resampled_ts = original_timestamps
+            # Resample timestamps to match the common time index
+            if len(original_timestamps) == 0:
+                # No timestamps available; create a NaN-filled array
+                resampled_ts = np.full(len(time_index), np.nan, dtype=float)
+            elif len(original_timestamps) != len(time_index):
+                relative_ts = original_timestamps - original_timestamps[0]
+                resampled_ts = np.interp(time_index, relative_ts, original_timestamps)
+            else:
+                resampled_ts = original_timestamps
 
-                df[ts_label] = resampled_ts
+            df[ts_label] = resampled_ts
 
-                rec.channels[ts_label] = {
-                    "sample_frequency": ts_info["srate"] if ts_info["srate"] else base_srate,
-                    "physical_dimension": "s",  # seconds
-                    "prefilter": "n/a",
-                    "channel_type": "MISC",  # Miscellaneous channel type
-                    "modality": "MISC",
-                }
+            rec.channels[ts_label] = {
+                "sample_frequency": ts_info["srate"] if ts_info["srate"] else base_srate,
+                "physical_dimension": "s",  # seconds
+                "prefilter": "n/a",
+                "channel_type": "MISC",  # Miscellaneous channel type
+                "modality": "MISC",
+            }
 
         rec.signals = df
         rec.set_metadata("srate", base_srate)
