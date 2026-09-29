@@ -295,23 +295,21 @@ class EDFImporter(BaseImporter):
             rec.set_metadata("source_file", filepath)
 
             # A Recording is keyed by label, so a repeated header label would
-            # silently overwrite a channel; suffix duplicates as MNE does.
-            unique = unique_channel_labels([info["label"] for info, _ in pairs])
-            for (signal_info, _), label in zip(pairs, unique, strict=True):
-                signal_info["label"] = label
+            # silently overwrite a channel; suffix duplicates as MNE does. The
+            # header's own label stays untouched in signal_info.
+            labels = unique_channel_labels([info["label"] for info, _ in pairs])
 
             # Read every signal up front so a mixed per-channel rate is detected
             # before any channel is added: channels of differing native length
             # cannot share the Recording's single time grid, so add_channel would
-            # raise mid-load. Each entry: (signal_info, signal_data, channel_type).
-            collected: list[tuple[dict, np.ndarray, str]] = []
-            for signal_info, signal_data in pairs:
-                channel_type = self._determine_channel_type(
-                    signal_info["label"], signal_info["transducer"]
-                )
-                collected.append((signal_info, signal_data, channel_type))
+            # raise mid-load. Each entry: (label, signal_info, signal_data,
+            # channel_type).
+            collected: list[tuple[str, dict, np.ndarray, str]] = []
+            for label, (signal_info, signal_data) in zip(labels, pairs, strict=True):
+                channel_type = self._determine_channel_type(label, signal_info["transducer"])
+                collected.append((label, signal_info, signal_data, channel_type))
 
-            rates = {info["sample_frequency"] for info, _, _ in collected}
+            rates = {info["sample_frequency"] for _, info, _, _ in collected}
             target_rate: float | None = None
             n_out = 0
             if len(rates) > 1:
@@ -328,10 +326,10 @@ class EDFImporter(BaseImporter):
                     )
                 # resample: lift every slower channel onto the fastest channel's grid.
                 target_rate = max(rates)
-                n_out = max(len(data) for _, data, _ in collected)
+                n_out = max(len(data) for _, _, data, _ in collected)
 
             # Add channels (resampling the slow ones first when mixed_rate="resample").
-            for signal_info, signal_data, channel_type in collected:
+            for label, signal_info, signal_data, channel_type in collected:
                 native = float(signal_info["sample_frequency"])
                 freq = native
                 resampled = target_rate is not None and native != target_rate
@@ -340,7 +338,7 @@ class EDFImporter(BaseImporter):
                     freq = float(target_rate)  # type: ignore[arg-type]  # non-None when resampled
 
                 rec.add_channel(
-                    label=signal_info["label"],
+                    label=label,
                     data=signal_data,
                     sample_frequency=freq,
                     physical_dimension=signal_info["physical_dimension"],
@@ -367,7 +365,7 @@ class EDFImporter(BaseImporter):
                     # consumers (e.g. the Zarr exporter) can tell this channel's
                     # data is a physically-forced constant, not a measurement.
                     channel_metadata["degenerate_physical_range"] = True
-                rec.channels[signal_info["label"]].update(channel_metadata)
+                rec.channels[label].update(channel_metadata)
 
             if target_rate is not None:
                 # Flag the recording as a resampled derived view so downstream
