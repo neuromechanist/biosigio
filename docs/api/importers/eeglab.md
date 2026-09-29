@@ -84,3 +84,7 @@ The `load()` method returns a single `Recording` object with:
 - Channel coordinates are preserved in the channel information when available.
 - A repeated channel label is renamed with a numeric suffix (`Fz_2`, ...)
   and a warning is issued, so every channel is kept.
+  The first occurrence keeps its label, and a suffix never takes a label another channel genuinely has:
+  `Fz, Fz, Fz_2` imports as `Fz, Fz_3, Fz_2`
+  (see [the EEGLAB format page](../../formats/eeglab.md)).
+  The renames are recorded in the metadata as `channel_labels_deduplicated`.
