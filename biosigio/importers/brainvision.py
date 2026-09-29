@@ -71,10 +71,17 @@ def resolved_vhdr(vhdr_path: str) -> Iterator[str]:
     """
     directory = os.path.dirname(os.path.abspath(vhdr_path))
     stem = os.path.splitext(os.path.abspath(vhdr_path))[0]
+    content: bytes | None = None
     try:
         with open(vhdr_path, "rb") as f:
             content = f.read()
     except OSError:
+        # Yield below, not here: yielding inside ``except`` would run the caller's
+        # block with this OSError as the implicit ``__context__`` of anything it raises.
+        pass
+    if content is None:
+        # Unreadable header: hand MNE the original path and let it raise the real
+        # read error, typed by the caller exactly as before this resolver existed.
         yield vhdr_path
         return
     encoding = _header_encoding(content)
