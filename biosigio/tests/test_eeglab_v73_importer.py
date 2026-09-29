@@ -426,6 +426,38 @@ def test_v73_flat_root_struct_companion_fdt_resolved(tmp_path):
         np.testing.assert_array_equal(rec.signals[label].to_numpy(), data[i])
 
 
+def test_v73_eeg_group_wins_over_flat_root_fields(tmp_path):
+    """With both an `EEG` group and flat root fields present, and disagreeing,
+    every value comes from the `EEG` group."""
+    path = str(tmp_path / "both_layouts.set")
+    inner_path = path + ".inner"
+    eeg_data = np.arange(3 * 8, dtype=np.float32).reshape(3, 8)
+    with h5py.File(inner_path, "w") as f:
+        for group, (nbchan, srate, pnts, data) in (
+            (f.create_group("EEG"), (3, 250.0, 8, eeg_data)),
+            (f, (2, 100.0, 5, np.ones((2, 5), dtype=np.float32))),
+        ):
+            group.create_dataset("nbchan", data=np.array([[float(nbchan)]]))
+            group.create_dataset("srate", data=np.array([[srate]]))
+            group.create_dataset("pnts", data=np.array([[float(pnts)]]))
+            group.create_dataset("trials", data=np.array([[1.0]]))
+            group.create_dataset("data", data=data.T)  # v7.3 stores samples x channels
+    with open(inner_path, "rb") as fh:
+        body = fh.read()
+    os.remove(inner_path)
+    with open(path, "wb") as fh:
+        fh.write(_wrap_matlab_v73_header(body))
+
+    rec = EEGLABImporter().load(path)
+
+    assert rec.get_metadata("srate") == 250.0
+    assert rec.get_metadata("nbchan") == 3
+    assert rec.get_metadata("pnts") == 8
+    assert rec.signals.shape == (8, 3)
+    for i, label in enumerate(rec.signals.columns):
+        np.testing.assert_array_equal(rec.signals[label].to_numpy(), eeg_data[i])
+
+
 @pytest.mark.parametrize("flat", [False, True])
 def test_v73_matlab_empty_chanloc_field_is_no_value(tmp_path, flat):
     """An empty `[]` chanlocs field (MATLAB_empty uint64 marker) is "no value".
