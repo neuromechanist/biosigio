@@ -207,4 +207,4 @@ The verification process:
 - When exporting to EDF/BDF, biosigIO automatically handles scaling to maximize precision
 - EDF/BDF export requires a single sampling rate across all channels; if per-channel rates differ, export raises `ValueError`. Resample channels to a common rate first
 - With `format='auto'`, `to_edf('output')` selects either `.edf` (16-bit) or `.bdf` (24-bit) based on signal analysis and appends the matching extension
-- EDF has limitations on channel naming (maximum 16 characters)
+- EDF stores a channel label in 16 characters. A longer label is truncated, and when truncation would give two channels the same label (every Delsys Trigno channel of one sensor, `Mini sensor 10: ACC.X 10`, `Mini sensor 10: ACC.Y 10`, ..., shares its first 16 characters), those channels are numbered within the 16 characters instead (`Mini sensor 10-0`, `Mini sensor 10-1`, ...) and a warning lists them. The `_channels.tsv` sidecar names every channel by the label written to the file, so it matches the file on re-import

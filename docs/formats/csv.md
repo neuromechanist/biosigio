@@ -116,4 +116,5 @@ The CSV importer includes several auto-detection capabilities:
 
 - When a specialized format (like Trigno) is detected, the importer will suggest using the appropriate specialized importer
 - For headerless files, auto-generated channel names will be "Channel_0", "Channel_1", etc.
+- A header that repeats a column name keeps every column: pandas renames the repeats (`EMG`, `EMG.1`, ...). A repeated name in `channel_names` or `columns` raises `ValueError` naming it
 - If no time column is found, a sample frequency must be provided to generate a time index 

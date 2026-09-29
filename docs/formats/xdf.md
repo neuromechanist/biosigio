@@ -76,16 +76,40 @@ When loading multiple streams with different sampling rates, biosigIO:
 
 1. Resamples all streams to a common time base
 2. Uses the highest sampling rate among selected streams
-3. Preserves channel labels with stream name prefixes for disambiguation
+3. Keeps each channel's own label from the stream header; a channel with no label gets `<stream name>_Ch<n>`
 
 ```python
 # Load EEG and EMG together (different sample rates)
 rec = Recording.from_file('recording.xdf', stream_types=['EEG', 'EMG'])
 
-# Channels will be named like: "StreamName_ChannelLabel"
 print(list(rec.channels.keys()))
-# ['MyEEG_Fp1', 'MyEEG_Fp2', ..., 'MyEMG_Bicep', 'MyEMG_Tricep']
+# ['Fp1', 'Fp2', ..., 'Bicep', 'Tricep']
 ```
+
+### Repeated channel labels
+
+Streams often share labels: two amplifiers that each call their first channel `Ch1`, or two streams with the same name.
+A `Recording` is keyed by label, so no two channels may share one.
+The first occurrence keeps its label, and each later one, in stream order, becomes `<label>_1`, `<label>_2`, and so on.
+A suffix never takes a label that some stream really uses:
+with streams `A: [Ch1, Ch1]` and `B: [Ch1_1]`, the channels are `Ch1`, `Ch1_2` and `Ch1_1`, and `Ch1_1` is stream B's own channel.
+
+```python
+rec = Recording.from_file('two_amplifiers.xdf')
+print(list(rec.channels.keys()))
+# ['Ch1', 'Ch2', 'Ch1_1', 'Ch2_1']
+print(rec.get_metadata('channel_labels_deduplicated'))
+# {'Ch1_1': 'Ch1', 'Ch2_1': 'Ch2'}
+```
+
+A warning names each renamed channel with the stream it came from,
+and the renames are recorded in the metadata under `channel_labels_deduplicated` as `{new_label: original_label}`, the same key the EDF/BDF, WFDB, EEGLAB, neo and Zarr importers use.
+A recording whose labels are already unique carries no such entry.
+
+This is the scheme XDF import has always used, so no channel that imported under its own label before is renamed now.
+It keeps the `_1` suffix rather than the `-0`, `-1` suffixes of [EDF repeated channel labels](edf.md#repeated-channel-labels),
+and it does not prefix the stream name: a prefix would rename channels that import unchanged today,
+and it still could not separate a label repeated within one stream, or two streams that share a name.
 
 ## Stream Types
 
@@ -148,6 +172,7 @@ print(list(rec.channels.keys()))
 
 Timestamp channels:
 
+- Are created once per stream, so two streams that share a name each keep their timestamps; the second becomes `{stream_name}_LSL_timestamps_1`, and a data channel that already carries a timestamp channel's name keeps it (see [Repeated channel labels](#repeated-channel-labels))
 - Contain the original LSL timestamps in seconds
 - Are marked with `channel_type='MISC'` and `physical_dimension='s'`
 - Are resampled along with the data when multiple streams have different rates

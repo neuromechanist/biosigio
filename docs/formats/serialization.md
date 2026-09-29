@@ -71,6 +71,9 @@ recognize and version-check the file before trusting it.
 - **Parquet and Arrow** carry the blob in the Arrow schema metadata
   (`tabular_schema.FORMAT = "biosigio-tabular"`, `FORMAT_VERSION = 1`). It holds
   the recording metadata, per-channel info, and events as one JSON object.
+  Each signal column is one channel label, so a Feather/Arrow file edited to
+  name two columns alike raises `ValueError` on import (Parquet itself refuses
+  to read such a file back).
 - **Zarr** carries an equivalent blob in the store's root attributes
   (`FORMAT = "biosigio-zarr"`, `FORMAT_VERSION = 2`), reusing the same metadata
   encoding so both formats record state the same way.

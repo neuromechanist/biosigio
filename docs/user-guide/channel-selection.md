@@ -31,6 +31,9 @@ print(f"Original channels: {len(rec.channels)}")
 print(f"Selected channels: {len(subset_emg.channels)}")
 ```
 
+Each name may appear once: `select_channels(['EMG1', 'EMG1'])` raises `ValueError`,
+because a second copy of a column would leave the new recording's signals and channel table disagreeing.
+
 ## Selecting Channels by Type
 
 biosigIO allows you to select channels based on their type:
