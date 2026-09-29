@@ -233,7 +233,8 @@ class _EdfSource:
 
         from ..exceptions import MixedSamplingRateError
         from ..importers._edf_tolerant import classify_pyedflib_error, read_edf_tolerant
-        from ..importers.edf import EDFImporter, _unique_channel_labels
+        from ..importers._labels import unique_channel_labels
+        from ..importers.edf import EDFImporter
 
         self.extra_metadata: dict = {}
         self._reader = None
@@ -299,7 +300,7 @@ class _EdfSource:
         self.channels = []
         # Same MNE-style suffixes for repeated labels as the in-memory importer,
         # so both paths name the channels of one file identically.
-        labels = _unique_channel_labels([cast(str, h["label"]).strip() for h in headers])
+        labels = unique_channel_labels([cast(str, h["label"]).strip() for h in headers])
         for i, (h, label) in enumerate(zip(headers, labels, strict=True)):
             transducer = cast(str, h.get("transducer", "")).strip()
             ctype = typer(label, transducer)

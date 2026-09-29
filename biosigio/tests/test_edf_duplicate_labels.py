@@ -17,7 +17,7 @@ import pyedflib
 import pytest
 
 from biosigio import Recording
-from biosigio.importers.edf import _unique_channel_labels
+from biosigio.importers._labels import unique_channel_labels
 
 # The CHB-MIT montage shape, trimmed: T8-P8 twice, three "-" and two "."
 # placeholders, and one unique channel between the repeats.
@@ -107,7 +107,7 @@ def test_unique_labels_are_unchanged(tmp_path):
 def test_suffix_that_collides_with_a_real_label_falls_through():
     # "A-0" already exists, so the first "A" becomes "A-a" (MNE's rule), and
     # "A-1" is free for the second.
-    assert _unique_channel_labels(["A", "A-0", "A"]) == ["A-a", "A-0", "A-1"]
+    assert unique_channel_labels(["A", "A-0", "A"]) == ["A-a", "A-0", "A-1"]
 
 
 def test_stream_store_uses_the_same_suffixed_labels(tmp_path):
