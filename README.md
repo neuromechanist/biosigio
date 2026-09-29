@@ -15,6 +15,8 @@ The documentation including installation instructions, examples, and API referen
 
 What changed in each release is in [CHANGELOG.md](CHANGELOG.md).
 
+**Breaking in 1.2.9:** `Recording.add_channel` raises `ValueError` for a label that already exists instead of silently replacing that channel; use `set_channel` to change metadata or assign `rec.signals[label]` to replace samples.
+
 ## Features
 
 - Import biosignal recordings from many systems and archives:

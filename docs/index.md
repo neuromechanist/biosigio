@@ -86,6 +86,8 @@ This documentation is organized as follows:
 
 What changed in each release is recorded in the [changelog](https://github.com/neuromechanist/biosigio/blob/main/CHANGELOG.md).
 
+**Breaking in 1.2.9:** `Recording.add_channel` raises `ValueError` for a label that already exists instead of silently replacing that channel; use `set_channel` to change metadata or assign `rec.signals[label]` to replace samples.
+
 ## License
 
 This project is licensed under the BSD 3-Clause License. 

@@ -125,6 +125,12 @@ rec.add_channel(
 )
 ```
 
+!!! warning "Breaking change in 1.2.9"
+    `add_channel` now raises `ValueError` when the label already exists.
+    Before 1.2.9 it silently replaced that channel.
+    Code that relied on the overwrite should call `set_channel` for metadata
+    or assign `rec.signals[label]` for samples, as shown below.
+
 Channel labels are unique. Calling `add_channel` with a label the Recording
 already has raises `ValueError` rather than replacing the existing channel
 (before 1.2.9 it silently overwrote it). To change a channel's metadata, use
