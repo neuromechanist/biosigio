@@ -13,6 +13,7 @@ The `Recording` class is the main class in biosigIO for working with biosignal d
         - __init__
         - from_file
         - add_channel
+        - set_channel
         - add_event
         - select_channels
         - get_channel_types
@@ -53,7 +54,7 @@ Details about the main attributes:
 ### Data Loading
 
 - `from_file()`: Load biosignal data from a file (class method)
-- `add_channel()`: Append a channel (data + metadata) to a Recording
+- `add_channel()`: Append a channel (data + metadata) to a Recording. Labels are unique: adding a label that already exists raises `ValueError`
 
 ### Data Access
 
@@ -67,6 +68,7 @@ Details about the main attributes:
 ### Data Manipulation
 
 - `select_channels()`: Create a new Recording object with selected channels
+- `set_channel()`: Update an existing channel's metadata (type, modality, unit, prefilter); it does not touch the samples
 - `set_metadata()`: Set a single metadata field
 - `get_metadata()`: Get a single metadata field
 - `has_metadata()`: Check if a metadata field exists
@@ -78,6 +80,8 @@ Details about the main attributes:
 ### Export
 
 - `to_edf()`: Export data to EDF/BDF format with optional verification
+- `to_parquet()`, `to_arrow()`: Lossless columnar export (`arrow` extra)
+- `to_zarr()`: Zarr serving store (`zarr` extra)
 
 ## Usage Examples
 
@@ -119,6 +123,19 @@ rec.add_channel(
     physical_dimension='µV',
     channel_type='EMG',
 )
+```
+
+Channel labels are unique. Calling `add_channel` with a label the Recording
+already has raises `ValueError` rather than replacing the existing channel
+(before 1.2.9 it silently overwrote it). To change a channel's metadata, use
+`set_channel`; to replace its samples, assign the column directly:
+
+```python
+# Update metadata only (the samples are unchanged)
+rec.set_channel('EMG1', physical_dimension='mV')
+
+# Replace the samples (same length as the recording)
+rec.signals['EMG1'] = np.array([0.5, 1.0, 1.5, 2.0, 2.5])
 ```
 
 ### Selecting Channels
