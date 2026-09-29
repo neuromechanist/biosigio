@@ -30,6 +30,44 @@ jobs:
     - name: Check package
       run: uv run twine check dist/*
 
+    # A release tagged v1.2.10 while version.py still says 1.2.9 would
+    # otherwise upload 1.2.9. Fail before any publish job can run. Runs
+    # without a tag (e.g. a manual trigger) skip the check.
+    - name: Check tag matches package version
+      env:
+        EVENT_NAME: ${{ github.event_name }}
+        REF_TYPE: ${{ github.ref_type }}
+        REF_NAME: ${{ github.ref_name }}
+        RELEASE_TAG: ${{ github.event.release.tag_name }}
+      run: |
+        if [ "$EVENT_NAME" = "release" ]; then
+          tag="$RELEASE_TAG"
+        elif [ "$REF_TYPE" = "tag" ]; then
+          tag="$REF_NAME"
+        else
+          echo "No tag for this run ($EVENT_NAME on $REF_TYPE $REF_NAME); skipping version check."
+          exit 0
+        fi
+        expected="${tag#v}"
+        source_version=$(python3 -c "import runpy; print(runpy.run_path('biosigio/version.py')['__version__'])")
+        status=0
+        if [ "$source_version" != "$expected" ]; then
+          echo "::error::Tag $tag does not match biosigio/version.py ($source_version)"
+          status=1
+        fi
+        for dist_file in dist/*.whl dist/*.tar.gz; do
+          [ -e "$dist_file" ] || { echo "::error::Missing built file matching $dist_file"; status=1; continue; }
+          name=$(basename "$dist_file")
+          name="${name%.tar.gz}"
+          dist_version=$(echo "$name" | cut -d- -f2)
+          if [ "$dist_version" != "$expected" ]; then
+            echo "::error::Tag $tag does not match built $(basename "$dist_file") ($dist_version)"
+            status=1
+          fi
+        done
+        [ "$status" -eq 0 ] && echo "Tag $tag matches package version $expected."
+        exit "$status"
+
     - name: Upload build artifacts
       uses: actions/upload-artifact@v7
       with:
