@@ -397,6 +397,12 @@ def _match_sidecar_names(
     other unmatched row casefolds to it too. Anything else stays unmatched, the
     way every non-exact row used to, and an ambiguous row is warned about.
 
+    Case is compared with :meth:`str.casefold`, full Unicode case folding, so it
+    is broader than lower-casing: ``STRASSE`` matches ``Straße`` because ``ß``
+    folds to ``ss``. It does not normalize Unicode, so a label spelled with a
+    precomposed character (NFC ``é``) and one spelled with a combining accent
+    (NFD ``e`` + U+0301) do not match.
+
     Shared by :func:`apply_channels_tsv` and :func:`apply_channels_tsv_to_stream`
     so the two export paths match the same rows to the same channels.
 
@@ -422,14 +428,16 @@ def _match_sidecar_names(
     for name in unmatched:
         rows_by_fold.setdefault(name.casefold(), []).append(name)
 
+    matched_labels = set(matches.values())
     case_matches: dict[str, str] = {}
     for name in unmatched:
         candidates = labels_by_fold.get(name.casefold(), [])
         if not candidates:
             continue
         rivals = rows_by_fold[name.casefold()]
-        if len(candidates) == 1 and candidates[0] not in matches.values() and len(rivals) == 1:
+        if len(candidates) == 1 and candidates[0] not in matched_labels and len(rivals) == 1:
             matches[name] = case_matches[name] = candidates[0]
+            matched_labels.add(candidates[0])
             logging.info(
                 "channels.tsv row %r matches channel %r only when case is ignored; "
                 "applying it to that channel: %s",

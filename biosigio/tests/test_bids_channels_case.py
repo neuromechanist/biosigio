@@ -15,6 +15,7 @@ import numpy as np
 import pytest
 
 from biosigio import Recording
+from biosigio.bids import apply_channels_tsv
 from biosigio.tests.test_bids_channels_units import write_channels_tsv
 from biosigio.tests.test_edf_duplicate_labels import _write_edf
 
@@ -125,3 +126,33 @@ def test_ambiguous_case_match_is_not_applied(tmp_path, caplog, labels, rows):
     np.testing.assert_allclose(in_memory.signals[labels[0]].to_numpy(), data[0], atol=0.01)
     assert "matched_case_insensitive" not in _report(in_memory)
     assert "ambiguous when case is ignored" in caplog.text
+
+
+def _labelled_recording(labels) -> Recording:
+    rec = Recording()
+    for i, label in enumerate(labels):
+        rec.add_channel(label, np.arange(10.0) + i, 100.0, "uV", "EEG")
+    return rec
+
+
+def test_case_match_uses_full_unicode_casefold(tmp_path):
+    """``casefold`` folds ``ß`` to ``ss``, so ``STRASSE`` describes ``Straße``."""
+    rec = _labelled_recording(["Straße", "Cz"])
+    sidecar = write_channels_tsv(tmp_path, STEM, [("STRASSE", "EOG", "uV"), ("Cz", "EEG", "uV")])
+
+    apply_channels_tsv(rec, sidecar)
+
+    assert rec.channels["Straße"]["channel_type"] == "EOG"
+    assert _report(rec)["matched_case_insensitive"] == {"STRASSE": "Straße"}
+
+
+def test_case_match_does_not_normalize_unicode(tmp_path):
+    """A precomposed ``é`` (NFC) and ``e`` + combining acute (NFD) are different names."""
+    nfc, nfd = "Café", "Café"
+    rec = _labelled_recording([nfc, "Cz"])
+    sidecar = write_channels_tsv(tmp_path, STEM, [(nfd.upper(), "EOG", "uV"), ("Cz", "EEG", "uV")])
+
+    apply_channels_tsv(rec, sidecar)
+
+    assert rec.channels[nfc]["channel_type"] == "EEG"
+    assert "matched_case_insensitive" not in _report(rec)

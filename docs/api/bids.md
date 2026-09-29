@@ -104,6 +104,11 @@ The key is present only when such a match happened.
 An ambiguous row, such as `fp1-f7` against channels `FP1-F7` and `Fp1-F7`, is left unapplied with a warning.
 The in-memory and streaming paths apply the same rule.
 
+"Ignoring case" means full Unicode case folding (Python's `str.casefold`), which is broader than lower-casing:
+a row `STRASSE` matches a channel `Straße`, because `ß` folds to `ss`.
+Unicode normalization is not applied,
+so a precomposed `é` (NFC) and an `e` followed by a combining accent (NFD) are different names.
+
 ## Module Documentation
 
 ::: biosigio.bids
