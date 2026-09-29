@@ -648,6 +648,43 @@ def test_eeglab_padded_label_collision_stays_unique(tmp_path):
         np.testing.assert_allclose(col, data[i], rtol=0, atol=1e-5)
 
 
+def test_eeglab_repeated_label_never_takes_a_genuine_label(tmp_path):
+    """A repeated label's suffix skips a label the file really uses.
+
+    ``Fz, Fz, Fz_2``: the genuine ``Fz_2`` keeps its name and the second ``Fz``
+    becomes ``Fz_3``. The suffix used to take ``Fz_2`` and push the genuine
+    channel to ``Fz_2_2``, so a ``channels.tsv`` row for ``Fz_2`` described the
+    wrong channel.
+    """
+    names = ["Fz", "Fz", "Fz_2", "Cz", "Cz"]
+    n_samples = 50
+    data = (np.arange(len(names))[:, None] * 1000 + np.arange(n_samples)).astype(np.float32)
+    chanlocs = np.zeros((1, len(names)), dtype=[("labels", "O"), ("type", "O")])
+    for i, name in enumerate(names):
+        chanlocs[0, i] = (np.array([name]), np.array(["EEG"]))
+    set_path = str(tmp_path / "repeated.set")
+    scipy.io.savemat(
+        set_path,
+        {
+            "nbchan": np.array([[len(names)]]),
+            "trials": np.array([[1]]),
+            "pnts": np.array([[n_samples]]),
+            "srate": np.array([[250]]),
+            "data": data,
+            "chanlocs": chanlocs,
+        },
+    )
+
+    with pytest.warns(UserWarning, match="duplicate EEGLAB channel label"):
+        rec = EEGLABImporter().load(set_path)
+
+    assert list(rec.signals.columns) == ["Fz", "Fz_3", "Fz_2", "Cz", "Cz_2"]
+    assert list(rec.channels) == list(rec.signals.columns)
+    for i, label in enumerate(rec.signals.columns):
+        np.testing.assert_array_equal(rec.signals[label].to_numpy(), data[i])
+    assert rec.metadata["channel_labels_deduplicated"] == {"Fz_3": "Fz", "Cz_2": "Cz"}
+
+
 def test_classic_missing_srate_defaults_with_a_warning(tmp_path, caplog):
     """A classic .set with no srate loads at the 1000 Hz default, logged, not silent."""
     path = str(tmp_path / "no_srate.set")

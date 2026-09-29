@@ -34,6 +34,7 @@ from ..exceptions import (
     classify_read_error,
     is_resource_exhaustion,
 )
+from ._labels import DEDUPLICATED_LABELS_KEY, suffix_repeated_labels
 from .base import BaseImporter
 
 # MATLAB .mat files (any version) open with a 128-byte descriptive text header.
@@ -755,24 +756,9 @@ class EEGLABImporter(BaseImporter):
                         )
 
                 # Labels must be unique (rec.channels is keyed by label, and
-                # the exporters slice rec.signals by column name); disambiguate
-                # collisions with a numeric suffix and warn, same as _load.
-                used_labels: set[str] = set()
-                for i, channel_info in enumerate(channel_info_list):
-                    label = channel_info.get("label", f"Channel{i + 1}")
-                    if label in used_labels:
-                        k = 2
-                        while f"{label}_{k}" in used_labels:
-                            k += 1
-                        warnings.warn(
-                            f"duplicate EEGLAB channel label {label!r}; renaming to {label}_{k}",
-                            stacklevel=3,
-                        )
-                        label = f"{label}_{k}"
-                    used_labels.add(label)
-                    channel_info["label"] = label
-
-                labels = [info["label"] for info in channel_info_list]
+                # the exporters slice rec.signals by column name); same rule
+                # as _load.
+                labels = _unique_eeglab_labels(rec, channel_info_list)
                 rec.signals = pd.DataFrame(
                     signal_data.T, columns=labels, index=time_index, copy=False
                 )
@@ -910,21 +896,8 @@ class EEGLABImporter(BaseImporter):
                 # (a real channel literally named "Channel4" colliding with a
                 # padded default, or duplicated labels in chanlocs itself)
                 # silently clobbers channel metadata and breaks per-channel
-                # export slicing. Disambiguate with a numeric suffix and warn.
-                used_labels: set[str] = set()
-                for i, channel_info in enumerate(channel_info_list):
-                    label = channel_info.get("label", f"Channel{i + 1}")
-                    if label in used_labels:
-                        k = 2
-                        while f"{label}_{k}" in used_labels:
-                            k += 1
-                        warnings.warn(
-                            f"duplicate EEGLAB channel label {label!r}; renaming to {label}_{k}",
-                            stacklevel=3,
-                        )
-                        label = f"{label}_{k}"
-                    used_labels.add(label)
-                    channel_info["label"] = label
+                # export slicing.
+                labels = _unique_eeglab_labels(rec, channel_info_list)
 
                 # Build the frame in a single allocation (samples x channels)
                 # rather than assigning one column at a time. The per-column path
@@ -932,7 +905,6 @@ class EEGLABImporter(BaseImporter):
                 # doubles peak RAM, which OOMs large / high-channel-count .fdt
                 # recordings (#66, #95); the .fdt's native float32 is preserved so
                 # a multi-GB recording is not silently upcast to float64.
-                labels = [info["label"] for info in channel_info_list]
                 rec.signals = pd.DataFrame(
                     signal_data.T, columns=labels, index=time_index, copy=False
                 )
@@ -971,3 +943,36 @@ class EEGLABImporter(BaseImporter):
             if is_resource_exhaustion(e):
                 raise
             raise classify_read_error(e, filepath) from e
+
+
+def _unique_eeglab_labels(rec: Recording, channel_info_list: list[dict[str, Any]]) -> list[str]:
+    """Give every channel a unique label, in place, and return the labels in order.
+
+    A ``chanlocs`` can repeat a label, and a padded default (``Channel4`` for
+    data row 4) can repeat a real one. The first occurrence keeps its label and
+    each later one becomes ``<label>_2``, ``<label>_3``, ... (EEGLAB's own
+    scheme, kept as it was), except that a suffix never takes a label the file
+    itself uses: in ``Fz``, ``Fz``, ``Fz_2`` the second ``Fz`` becomes ``Fz_3``
+    and the genuine ``Fz_2`` keeps its name, where it used to be pushed to
+    ``Fz_2_2`` while a copy of ``Fz`` took its label. Each rename is warned
+    about, and the map is recorded as ``channel_labels_deduplicated``.
+
+    Raises:
+        RuntimeError: If the labels are still not unique, which would make the
+            ``rec.channels`` writes that follow overwrite a channel. The suffix
+            rule makes that impossible; the check keeps it impossible.
+    """
+    original = [info.get("label", f"Channel{i + 1}") for i, info in enumerate(channel_info_list)]
+    labels, renames = suffix_repeated_labels(original, separator="_", start=2)
+    for info, label in zip(channel_info_list, labels, strict=True):
+        if label in renames:
+            warnings.warn(
+                f"duplicate EEGLAB channel label {renames[label]!r}; renaming to {label}",
+                stacklevel=4,
+            )
+        info["label"] = label
+    if len(set(labels)) != len(labels):
+        raise RuntimeError(f"EEGLAB channel labels are still not unique: {labels}")
+    if renames:
+        rec.set_metadata(DEDUPLICATED_LABELS_KEY, renames)
+    return labels
