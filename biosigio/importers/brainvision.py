@@ -101,7 +101,10 @@ def resolved_vhdr(vhdr_path: str) -> Iterator[str]:
         # An absolute path the header's codepage cannot spell: read it as today.
         yield vhdr_path
         return
-    with tempfile.TemporaryDirectory(prefix="biosigio-vhdr-") as tmp:
+    # A failure to create or write the copy propagates unchanged (see
+    # BrainVisionImporter.load); a failure to remove it after a successful read is
+    # ignored rather than turned into a spurious error for a recording that loaded.
+    with tempfile.TemporaryDirectory(prefix="biosigio-vhdr-", ignore_cleanup_errors=True) as tmp:
         tmp_vhdr = os.path.join(tmp, os.path.basename(vhdr_path))
         with open(tmp_vhdr, "wb") as f:
             f.write(patched)
@@ -142,17 +145,23 @@ class BrainVisionImporter(BaseImporter):
             are read into ``Recording.events``.
         """
         mne = require_mne()
-        try:
-            with resolved_vhdr(filepath) as vhdr:
+        # The resolver sits OUTSIDE the classifying try on purpose: the only thing
+        # it can raise is a failure to write the patched temporary header (ENOSPC,
+        # EROFS, EACCES, quota), which is a host condition, not a property of the
+        # recording, and must propagate as-is rather than become a typed (possibly
+        # permanent) read failure. An unreadable header is not raised here; the
+        # resolver yields the original path and MNE raises inside the try below.
+        with resolved_vhdr(filepath) as vhdr:
+            try:
                 raw = mne.io.read_raw_brainvision(vhdr, preload=True, verbose="ERROR")
-        except Exception as e:
-            # Resource exhaustion (MemoryError, thread/allocation-exhaustion
-            # OSError/RuntimeError) is a host condition, not a file problem --
-            # propagate unchanged rather than reclassifying it as a permanent
-            # read failure (see biosigio.exceptions.is_resource_exhaustion).
-            if is_resource_exhaustion(e):
-                raise
-            raise classify_read_error(e, filepath) from e
+            except Exception as e:
+                # Resource exhaustion (MemoryError, thread/allocation-exhaustion
+                # OSError/RuntimeError) is a host condition, not a file problem --
+                # propagate unchanged rather than reclassifying it as a permanent
+                # read failure (see biosigio.exceptions.is_resource_exhaustion).
+                if is_resource_exhaustion(e):
+                    raise
+                raise classify_read_error(e, filepath) from e
 
         rec = raw_to_recording(raw)
         rec.set_metadata("source_file", filepath)
