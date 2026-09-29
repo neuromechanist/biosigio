@@ -58,6 +58,10 @@ which keep the full notes; releases older than 1.1.0 are listed there only.
 - The XDF and EEGLAB importers write channels directly rather than through `add_channel`,
   so they are not covered by the new duplicate-label guard
   ([#134](https://github.com/neuromechanist/biosigio/issues/134)).
+- `apply_channels_tsv` matches `channels.tsv` names to channels case-sensitively, so a
+  sidecar that differs from the source file only in case (for example `Fp1-F7` against an
+  EDF header's `FP1-F7`) silently skips that channel's type and unit
+  ([#136](https://github.com/neuromechanist/biosigio/issues/136)).
 
 ## [1.2.8] - 2026-09-23
 
