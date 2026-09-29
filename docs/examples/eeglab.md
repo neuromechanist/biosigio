@@ -1,6 +1,6 @@
 # EEGLAB Examples
 
-This page provides examples for working with EEGLAB `.set` files using biosigIO. The importer reads `.set` files with `scipy.io.loadmat`, so only pre-v7.3 (non-HDF5) MATLAB `.set` files are supported; v7.3/HDF5 `.set` files are not.
+This page provides examples for working with EEGLAB `.set` files using biosigIO. Classic (v5/v7) MATLAB `.set` files are read with `scipy.io.loadmat`; MATLAB v7.3 (HDF5) `.set` files are read with h5py and need the `hdf5` extra (`uv sync --extra hdf5`). See the [EEGLAB format page](../formats/eeglab.md) for details.
 
 ## Basic EEGLAB Example
 

@@ -33,11 +33,14 @@ extension, so it supports:
 2. MATLAB v7.3 (HDF5) `.set` files, via
    [h5py](https://www.h5py.org/) -- an optional dependency (the `hdf5` extra:
    `uv sync --extra hdf5`); a clear `ImportError` with an install hint is
-   raised if a v7.3 file is loaded without it installed. An epoched v7.3 file
-   (`EEG.trials > 1`) raises `NotContinuousRecordingError` instead of being
-   read as a fake continuous recording.
-3. Multiple channel types (EMG, EEG, ACC, etc.)
-4. Event markers (stored in metadata)
+   raised if a v7.3 file is loaded without it installed. Both the `EEG`-group
+   layout and a flat layout (the struct's fields at the HDF5 root) are read.
+   An epoched v7.3 file (`EEG.trials > 1`) raises
+   `NotContinuousRecordingError` instead of being read as a fake continuous
+   recording.
+3. Signal data inline in the `.set` or in a sibling `.fdt` file.
+4. Multiple channel types (EMG, EEG, ACC, etc.)
+5. Event markers (loaded into `Recording.events`)
 
 ## Channel Type Detection
 
@@ -69,10 +72,15 @@ The `load()` method returns a single `Recording` object with:
    - `srate`: sampling rate
    - `nbchan`, `trials`, `pnts`
    - `xmin`/`xmax`: time limits
-   - `events`: list of event markers (stored under the `events` key)
    - `device`: set to `'EEGLAB'`
+   - `source_file`: the path that was loaded
+4. **events**: a DataFrame with `onset` and `duration` in seconds (converted
+   from EEGLAB's 1-based sample latencies) and the event `type` as
+   `description`.
 
 ## Notes
 
-- Event markers are preserved in metadata under the `events` key.
+- Event markers are loaded into `Recording.events`, not into metadata.
 - Channel coordinates are preserved in the channel information when available.
+- A repeated channel label is renamed with a numeric suffix (`Fz_2`, ...)
+  and a warning is issued, so every channel is kept.
