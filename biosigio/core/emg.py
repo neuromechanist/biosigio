@@ -885,11 +885,19 @@ class Recording:
         Raises:
             ValueError: If a channel with ``label`` already exists; channels are
                 keyed by label, so adding it again would silently replace one.
+                This used to overwrite the existing channel. ``set_channel``
+                updates an existing channel's metadata only and cannot replace
+                its samples, and Recording has no remove-channel method; to
+                replace the samples, assign ``rec.signals[label] = new_data``
+                (same length as the recording), or add the new data under a
+                different label.
         """
         if label in self.channels:
             raise ValueError(
-                f"Channel {label!r} already exists; channel labels must be unique "
-                "(use set_channel to update an existing channel's metadata)"
+                f"Channel {label!r} already exists; channel labels must be unique. "
+                "set_channel updates metadata only and cannot replace data; to "
+                f"replace the samples assign rec.signals[{label!r}] = new_data, or "
+                "add the new data under a different label"
             )
         canonical_type = validate_channel_type(channel_type)
         canonical_modality = (
