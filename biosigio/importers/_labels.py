@@ -11,6 +11,56 @@ logger = logging.getLogger(__name__)
 DEDUPLICATED_LABELS_KEY = "channel_labels_deduplicated"
 
 
+def suffix_repeated_labels(
+    labels: list[str], *, separator: str = "_", start: int = 1
+) -> tuple[list[str], dict[str, str]]:
+    """Keep the first occurrence of each label and number the later ones.
+
+    This is the scheme the EEGLAB (``Fz``, ``Fz_2``, ``Fz_3``), XDF (``Ch1``,
+    ``Ch1_1``) and neo (``ch``, ``ch_0``) importers have always used, so a label
+    that imported unchanged before still does; it differs from
+    :func:`unique_channel_labels`, which renames every occurrence the way MNE does.
+
+    A suffixed name is never one the source itself uses: every original label is
+    reserved before any suffix is chosen, so a genuine channel named ``Fz_2``
+    keeps its name and the second ``Fz`` becomes ``Fz_3``. Without that
+    reservation the synthesized name would take the genuine channel's label and
+    push the genuine channel to ``Fz_2_2``, which is how a ``channels.tsv`` row
+    for ``Fz_2`` ends up describing the wrong channel.
+
+    Args:
+        labels: Channel labels in source order.
+        separator: Placed between the label and its number.
+        start: The number the second occurrence gets.
+
+    Returns:
+        ``(labels, renames)``: unique labels in input order, and
+        ``{new_label: original_label}`` for every label that was changed (empty
+        when the labels were already unique). The caller reports the renames in
+        its own format's words and records a non-empty mapping under
+        :data:`DEDUPLICATED_LABELS_KEY`.
+    """
+    names = list(labels)
+    reserved = set(names)
+    taken: set[str] = set()
+    out: list[str] = []
+    renames: dict[str, str] = {}
+    for name in names:
+        if name not in taken:
+            taken.add(name)
+            out.append(name)
+            continue
+        number = start
+        candidate = f"{name}{separator}{number}"
+        while candidate in reserved or candidate in taken:
+            number += 1
+            candidate = f"{name}{separator}{number}"
+        taken.add(candidate)
+        out.append(candidate)
+        renames[candidate] = name
+    return out, renames
+
+
 def unique_channel_labels(
     labels: list[str], *, source: str = "EDF", filepath: str | None = None
 ) -> tuple[list[str], dict[str, str]]:
