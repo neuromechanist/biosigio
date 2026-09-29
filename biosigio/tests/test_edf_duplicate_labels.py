@@ -17,7 +17,7 @@ import pyedflib
 import pytest
 
 from biosigio import Recording
-from biosigio.importers._labels import unique_channel_labels
+from biosigio.importers._labels import DEDUPLICATED_LABELS_KEY, unique_channel_labels
 
 # The CHB-MIT montage shape, trimmed: T8-P8 twice, three "-" and two "."
 # placeholders, and one unique channel between the repeats.
@@ -34,6 +34,8 @@ DUP_EXPECTED = [
     ".-1",
     "VNS",
 ]
+# {new_label: header_label} for every suffixed label in DUP_EXPECTED.
+DUP_RENAMES = {new: old for new, old in zip(DUP_EXPECTED, DUP_LABELS, strict=True) if new != old}
 
 
 def _write_edf(path: str, labels: list[str], rate: float = 256.0, seconds: int = 2) -> np.ndarray:
@@ -76,6 +78,7 @@ def test_duplicate_labels_keep_every_channel_with_mne_suffixes(tmp_path):
     assert list(rec.channels) == DUP_EXPECTED
     assert list(rec.signals.columns) == DUP_EXPECTED
     assert len(rec.channels) == n_header
+    assert rec.metadata[DEDUPLICATED_LABELS_KEY] == DUP_RENAMES
     # Each suffixed channel carries its own on-disk signal, in header order.
     for i, label in enumerate(DUP_EXPECTED):
         np.testing.assert_allclose(rec.signals[label].to_numpy(), data[i], atol=0.01)
@@ -100,6 +103,7 @@ def test_unique_labels_are_unchanged(tmp_path):
     rec = Recording.from_file(path)
 
     assert list(rec.channels) == labels
+    assert DEDUPLICATED_LABELS_KEY not in rec.metadata
     for i, label in enumerate(labels):
         np.testing.assert_allclose(rec.signals[label].to_numpy(), data[i], atol=0.01)
 
@@ -107,7 +111,24 @@ def test_unique_labels_are_unchanged(tmp_path):
 def test_suffix_that_collides_with_a_real_label_falls_through():
     # "A-0" already exists, so the first "A" becomes "A-a" (MNE's rule), and
     # "A-1" is free for the second.
-    assert unique_channel_labels(["A", "A-0", "A"]) == ["A-a", "A-0", "A-1"]
+    assert unique_channel_labels(["A", "A-0", "A"]) == (
+        ["A-a", "A-0", "A-1"],
+        {"A-a": "A", "A-1": "A"},
+    )
+
+
+def test_unique_labels_return_an_empty_rename_map():
+    assert unique_channel_labels(["A", "B"]) == (["A", "B"], {})
+
+
+def test_warning_and_error_name_the_file(caplog):
+    with caplog.at_level("WARNING", logger="biosigio.importers._labels"):
+        unique_channel_labels(["A", "A"], source="WFDB", filepath="/data/rec.hea")
+    assert "WFDB channel labels are not unique in /data/rec.hea" in caplog.text
+
+    taken = ["A-0", *(f"A-{c}" for c in "abcdefghijklmnopqrstuvwxyz")]
+    with pytest.raises(ValueError, match=r"WFDB channel label 'A' in /data/rec\.hea"):
+        unique_channel_labels(["A", "A", *taken], source="WFDB", filepath="/data/rec.hea")
 
 
 def test_stream_store_uses_the_same_suffixed_labels(tmp_path):
@@ -125,6 +146,35 @@ def test_stream_store_uses_the_same_suffixed_labels(tmp_path):
     groups = [root[name] for name in root.group_keys() if "channels" in root[name].attrs]
     labels = [c["label"] for g in groups for c in g.attrs["channels"]]  # ty: ignore[not-iterable]
     assert labels == DUP_EXPECTED
+    # The renames ride in the store's recording metadata and survive re-import.
+    stored = root.attrs["recording_metadata"]
+    assert stored[DEDUPLICATED_LABELS_KEY] == DUP_RENAMES
+    rt = Recording.from_file(store)
+    assert list(rt.channels) == DUP_EXPECTED
+    assert rt.metadata[DEDUPLICATED_LABELS_KEY] == DUP_RENAMES
+
+
+def test_in_memory_store_keeps_the_rename_map(tmp_path):
+    """The in-memory export writes rec.metadata into the store, so the renames
+    survive EDF -> Zarr -> Recording; a unique-label file writes no key at all,
+    so its store reads back exactly as before."""
+    pytest.importorskip("zarr", reason="Zarr serving format requires the 'zarr' extra")
+    import zarr
+
+    path = os.path.join(tmp_path, "dup.edf")
+    _write_edf(path, DUP_LABELS)
+    store = Recording.from_file(path).to_zarr(os.path.join(tmp_path, "m"), dtype="float32")
+
+    rt = Recording.from_file(store)
+    assert list(rt.channels) == DUP_EXPECTED
+    assert rt.metadata[DEDUPLICATED_LABELS_KEY] == DUP_RENAMES
+
+    plain = os.path.join(tmp_path, "plain.edf")
+    _write_edf(plain, ["Fp1-F7", "F7-T7"])
+    plain_store = Recording.from_file(plain).to_zarr(os.path.join(tmp_path, "p"))
+    meta = zarr.open_group(plain_store, mode="r").attrs["recording_metadata"]
+    assert DEDUPLICATED_LABELS_KEY not in meta
+    assert DEDUPLICATED_LABELS_KEY not in Recording.from_file(plain_store).metadata
 
 
 def test_add_channel_refuses_a_duplicate_label():
@@ -165,6 +215,9 @@ def test_zarr_store_with_duplicate_labels_reimports(tmp_path, caplog):
 
     assert list(rt.channels) == ["T8-P8-0", "FT10-T8", "T8-P8-1"]
     assert "Zarr store channel labels are not unique" in caplog.text
+    assert store in caplog.text
+    # The rename made on this read is recorded alongside the restored metadata.
+    assert rt.metadata[DEDUPLICATED_LABELS_KEY] == {"T8-P8-0": "T8-P8", "T8-P8-1": "T8-P8"}
     # Each suffixed channel still reads its own row of the store.
     signals = rec.signals
     assert signals is not None
@@ -211,6 +264,7 @@ def test_tolerant_fallback_keeps_duplicate_labels(tmp_path):
 
     assert rec.metadata["edf_tolerant_read"] is True
     assert list(rec.channels) == ["EEG-0", "REF", "EEG-1"]
+    assert rec.metadata[DEDUPLICATED_LABELS_KEY] == {"EEG-0": "EEG", "EEG-1": "EEG"}
     np.testing.assert_allclose(rec.signals["EEG-0"].to_numpy(), truth[0], rtol=1e-9)
     np.testing.assert_allclose(rec.signals["EEG-1"].to_numpy(), truth[2], rtol=1e-9)
     assert rec.channels["EEG-0"]["physical_max"] == 200.0
@@ -224,6 +278,7 @@ def test_tolerant_fallback_keeps_duplicate_labels(tmp_path):
     source = _EdfSource(path, force_modality="EEG")
     try:
         assert [c["label"] for c in source.channels] == ["EEG-0", "REF", "EEG-1"]
+        assert source.extra_metadata[DEDUPLICATED_LABELS_KEY] == {"EEG-0": "EEG", "EEG-1": "EEG"}
     finally:
         source.close()
 

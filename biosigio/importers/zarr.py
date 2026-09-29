@@ -26,7 +26,7 @@ from ..core.emg import Recording
 from ..exceptions import is_resource_exhaustion
 from ..exporters.zarr import FORMAT, FORMAT_VERSION, require_zarr
 from ..tabular_schema import metadata_from_mapping
-from ._labels import unique_channel_labels
+from ._labels import DEDUPLICATED_LABELS_KEY, unique_channel_labels
 from .base import BaseImporter
 
 
@@ -89,8 +89,10 @@ class ZarrImporter(BaseImporter):
             # A store published by the streaming path before repeated EDF labels
             # were suffixed can hold the same label twice; a Recording is keyed by
             # label, so suffix repeats (with a warning) rather than refuse it.
-            labels = unique_channel_labels(
-                [str(meta["label"]) for meta in channel_rows], source="Zarr store"
+            labels, renames = unique_channel_labels(
+                [str(meta["label"]) for meta in channel_rows],
+                source="Zarr store",
+                filepath=filepath,
             )
             for label, meta in zip(labels, channel_rows, strict=True):
                 i = int(meta["row_index"])
@@ -113,6 +115,11 @@ class ZarrImporter(BaseImporter):
         if meta_blob is not None:
             # Accepts both a native object (v2) and a legacy JSON string (v1).
             rec.metadata = metadata_from_mapping(meta_blob)
+        if renames:
+            # Renames made on THIS read (a store published before repeated labels
+            # were suffixed) join any the store already records from its source.
+            recorded = rec.metadata.get(DEDUPLICATED_LABELS_KEY) or {}
+            rec.set_metadata(DEDUPLICATED_LABELS_KEY, {**recorded, **renames})
         rec.set_metadata("source_file", filepath)
         return rec
 

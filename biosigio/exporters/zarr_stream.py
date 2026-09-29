@@ -233,7 +233,7 @@ class _EdfSource:
 
         from ..exceptions import MixedSamplingRateError
         from ..importers._edf_tolerant import classify_pyedflib_error, read_edf_tolerant
-        from ..importers._labels import unique_channel_labels
+        from ..importers._labels import DEDUPLICATED_LABELS_KEY, unique_channel_labels
         from ..importers.edf import EDFImporter
 
         self.extra_metadata: dict = {}
@@ -254,6 +254,8 @@ class _EdfSource:
             fallback = read_edf_tolerant(filepath, reason)
             self.extra_metadata["edf_tolerant_read"] = True
             self.extra_metadata["edf_tolerant_read_reason"] = reason
+            if fallback.renamed_labels:
+                self.extra_metadata[DEDUPLICATED_LABELS_KEY] = dict(fallback.renamed_labels)
 
             rates = {ch.sample_frequency for ch in fallback.channels}
             if len(rates) > 1:
@@ -300,7 +302,13 @@ class _EdfSource:
         self.channels = []
         # Same MNE-style suffixes for repeated labels as the in-memory importer,
         # so both paths name the channels of one file identically.
-        labels = unique_channel_labels([cast(str, h["label"]).strip() for h in headers])
+        # The renames ride into the store's recording_metadata, as they do from
+        # the in-memory importer's Recording.metadata.
+        labels, renames = unique_channel_labels(
+            [cast(str, h["label"]).strip() for h in headers], filepath=filepath
+        )
+        if renames:
+            self.extra_metadata[DEDUPLICATED_LABELS_KEY] = renames
         for i, (h, label) in enumerate(zip(headers, labels, strict=True)):
             transducer = cast(str, h.get("transducer", "")).strip()
             ctype = typer(label, transducer)

@@ -179,3 +179,10 @@ def test_wfdb_repeated_sig_name_keeps_every_signal(tmp_path):
     for i, label in enumerate(["EMG1-0", "EMG1-1", "ECG"]):
         np.testing.assert_allclose(rec.signals[label].to_numpy(), sig[:, i], atol=1e-3)
         assert "adc_gain" in rec.channels[label]
+    # The rename is recorded on the Recording, not only logged.
+    assert rec.metadata["channel_labels_deduplicated"] == {"EMG1-0": "EMG1", "EMG1-1": "EMG1"}
+
+
+def test_wfdb_unique_sig_names_record_no_renames(wfdb_importer, wfdb_data):
+    rec = wfdb_importer.load(wfdb_data["hea"])
+    assert "channel_labels_deduplicated" not in rec.metadata
