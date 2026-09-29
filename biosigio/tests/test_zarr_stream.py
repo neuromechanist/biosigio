@@ -1,4 +1,4 @@
-"""Streaming Zarr export (bounded-memory large-recording path, NEMAR nemar-cli#737/#736).
+"""Streaming Zarr export (the bounded-memory path NEMAR uses for large recordings).
 
 Verifies that the streaming converter (lazy MNE read -> channel-major memmap ->
 per-channel resample/quantize/write) reproduces what a full in-memory load would

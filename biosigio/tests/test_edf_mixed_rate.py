@@ -1,4 +1,4 @@
-"""Mixed per-channel sampling-rate EDF handling (NEMAR nemar-cli#737).
+"""Mixed per-channel sampling-rate EDF handling (found converting NEMAR datasets).
 
 EDF/BDF allow each signal its own sampling rate (polysomnography is the classic
 case: EEG/EOG/EMG ~100-256 Hz alongside SpO2/respiration ~10-25 Hz). biosigIO
