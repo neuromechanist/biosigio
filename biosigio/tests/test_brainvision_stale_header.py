@@ -32,6 +32,7 @@ def _write_triplet(
     newline: str = "\n",
     codepage: str = "UTF-8",
     encoding: str = "utf-8",
+    channel_names: tuple[str, ...] | None = None,
 ) -> tuple[str, np.ndarray]:
     """Write ``<STEM>.vhdr`` referencing ``data_ref``/``marker_ref``, plus the
     correctly named ``<STEM><data_ext>`` and ``<STEM>.vmrk`` beside it.
@@ -52,7 +53,8 @@ def _write_triplet(
     ]
     with open(os.path.join(directory, STEM + ".vmrk"), "w", encoding=encoding, newline="") as f:
         f.write(newline.join(vmrk) + newline)
-    channels = [f"Ch{i + 1}=C{i + 1}é,,0.1,µV" for i in range(N_CH)]
+    names = channel_names or tuple(f"C{i + 1}é" for i in range(N_CH))
+    channels = [f"Ch{i + 1}={name},,0.1,µV" for i, name in enumerate(names)]
     vhdr = [
         "Brain Vision Data Exchange Header File Version 1.0",
         "; Écrit à la main",
@@ -197,3 +199,39 @@ def test_temp_copy_failure_is_a_host_error_not_a_file_error(tmp_path, monkeypatc
     finally:
         if tmp_root.exists():
             tmp_root.chmod(0o700)
+
+
+def test_nel_inside_a_latin1_channel_name_is_not_a_line_break(tmp_path):
+    """``\\x85`` is NEL in Latin-1; ``str.splitlines`` would break on it and could
+    see a ``[Common Infos]`` section and a ``DataFile=`` key inside a channel name."""
+    tricky = "C1\x85[Common Infos]\x85DataFile=x.eeg"
+    vhdr, data = _write_triplet(
+        tmp_path,
+        "old.eeg",
+        "old.vmrk",
+        codepage="Latin-1",
+        encoding="latin-1",
+        channel_names=(tricky, "C2", "C3"),
+    )
+    original = open(vhdr, "rb").read()
+    with resolved_vhdr(vhdr) as used:
+        patched = open(used, "rb").read()
+    expected = original.replace(
+        b"DataFile=old.eeg", f"DataFile={tmp_path / (STEM + '.eeg')}".encode("latin-1")
+    ).replace(b"MarkerFile=old.vmrk", f"MarkerFile={tmp_path / (STEM + '.vmrk')}".encode("latin-1"))
+    assert patched == expected
+    rec = Recording.from_file(vhdr)
+    _assert_loaded(rec, data)
+    assert tricky in rec.channels
+
+
+def test_lone_cr_header_is_patched_line_by_line(tmp_path):
+    """Old-Mac ``\\r`` line endings still split into lines (as ``splitlines`` did)."""
+    vhdr, _ = _write_triplet(tmp_path, "old.eeg", "old.vmrk", newline="\r")
+    original = open(vhdr, "rb").read()
+    with resolved_vhdr(vhdr) as used:
+        patched = open(used, "rb").read()
+    expected = original.replace(
+        b"DataFile=old.eeg", f"DataFile={tmp_path / (STEM + '.eeg')}".encode()
+    ).replace(b"MarkerFile=old.vmrk", f"MarkerFile={tmp_path / (STEM + '.vmrk')}".encode())
+    assert patched == expected
