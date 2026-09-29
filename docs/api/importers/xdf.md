@@ -171,4 +171,8 @@ Contains metadata for a single stream:
 
 3. **Resampling:** Multiple streams with different rates are resampled using linear interpolation to the highest rate.
 
-4. **Channel Naming:** Channels are prefixed with stream name to avoid conflicts (e.g., "StreamName_ChannelLabel").
+4. **Channel Naming:** Each channel keeps its own label from the stream header, without a stream-name prefix;
+   a channel with no label gets `<stream name>_Ch<n>`.
+   When a label repeats, the first occurrence keeps it and later ones become `<label>_1`, `<label>_2`, and so on,
+   never a label another channel genuinely has
+   (see [Repeated channel labels](../../formats/xdf.md#repeated-channel-labels)).
