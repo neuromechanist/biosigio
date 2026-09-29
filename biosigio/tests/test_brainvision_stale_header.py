@@ -23,7 +23,6 @@ from biosigio.exceptions import BiosigIOError, CorruptFileError, FileReadError  
 from biosigio.exporters.zarr_stream import _open_stream_source  # noqa: E402
 from biosigio.importers.brainvision import (  # noqa: E402
     HEADER_RECOVERED_KEY,
-    BrainVisionHeaderRecoveryError,
     resolved_vhdr,
 )
 
@@ -91,6 +90,14 @@ def _write_triplet(
     return vhdr_path, data
 
 
+def _staged(original: bytes, data: str = "old.eeg", marker: str = "old.vmrk") -> bytes:
+    """``original`` as the resolver writes its copy: both references renamed to
+    the ASCII names of the files staged beside it, every other byte kept."""
+    return original.replace(f"DataFile={data}".encode(), b"DataFile=data.eeg").replace(
+        f"MarkerFile={marker}".encode(), b"MarkerFile=marker.vmrk"
+    )
+
+
 def _snapshot(directory) -> dict[str, bytes]:
     return {p.name: p.read_bytes() for p in pathlib.Path(directory).iterdir()}
 
@@ -106,7 +113,10 @@ def _assert_loaded(rec: Recording, data: np.ndarray) -> None:
 
 
 def _assert_streams(vhdr_path: str, data: np.ndarray) -> None:
+    """Stream the recording; lazy reads go through the staged data file, whose
+    temporary directory lives exactly as long as the source."""
     source = _open_stream_source(vhdr_path, None)
+    data_path = str(source._raw.filenames[0])
     try:
         assert source.sfreq == SFREQ
         assert source.n_samples == N_SAMPLES
@@ -115,6 +125,8 @@ def _assert_streams(vhdr_path: str, data: np.ndarray) -> None:
         np.testing.assert_allclose(source.read([1], 100, 200), data[1:2, 100:200] * 0.1e-6)
     finally:
         source.close()
+    if "biosigio-vhdr-" in data_path:
+        assert not os.path.exists(os.path.dirname(data_path))
 
 
 def test_matching_header_is_read_unchanged(tmp_path):
@@ -173,10 +185,7 @@ def test_patched_copy_keeps_encoding_and_line_endings(tmp_path, newline, codepag
         assert used != vhdr
         patched = open(used, "rb").read()
     assert not os.path.exists(used)  # the temporary copy is cleaned up
-    expected = original.replace(
-        b"DataFile=old.eeg", f"DataFile={tmp_path / (STEM + '.eeg')}".encode(encoding)
-    ).replace(b"MarkerFile=old.vmrk", f"MarkerFile={tmp_path / (STEM + '.vmrk')}".encode(encoding))
-    assert patched == expected
+    assert patched == _staged(original)
     _assert_loaded(Recording.from_file(vhdr), data)
 
 
@@ -285,10 +294,7 @@ def test_nel_inside_a_latin1_channel_name_is_not_a_line_break(tmp_path):
     original = open(vhdr, "rb").read()
     with resolved_vhdr(vhdr) as used:
         patched = open(used, "rb").read()
-    expected = original.replace(
-        b"DataFile=old.eeg", f"DataFile={tmp_path / (STEM + '.eeg')}".encode("latin-1")
-    ).replace(b"MarkerFile=old.vmrk", f"MarkerFile={tmp_path / (STEM + '.vmrk')}".encode("latin-1"))
-    assert patched == expected
+    assert patched == _staged(original)
     rec = Recording.from_file(vhdr)
     _assert_loaded(rec, data)
     assert tricky in rec.channels
@@ -300,10 +306,7 @@ def test_lone_cr_header_is_patched_line_by_line(tmp_path):
     original = open(vhdr, "rb").read()
     with resolved_vhdr(vhdr) as used:
         patched = open(used, "rb").read()
-    expected = original.replace(
-        b"DataFile=old.eeg", f"DataFile={tmp_path / (STEM + '.eeg')}".encode()
-    ).replace(b"MarkerFile=old.vmrk", f"MarkerFile={tmp_path / (STEM + '.vmrk')}".encode())
-    assert patched == expected
+    assert patched == _staged(original)
 
 
 def test_unreadable_header_yields_original_without_chained_context(tmp_path, caplog):
@@ -322,26 +325,20 @@ def test_unreadable_header_yields_original_without_chained_context(tmp_path, cap
         Recording.from_file(missing)
 
 
-def test_path_outside_the_codepage_is_written_as_utf8(tmp_path):
-    """A cp1252 header whose siblings live under a Greek directory name: the patched
-    copy is UTF-8, declares ``Codepage=UTF-8`` and keeps CRLF, instead of silently
-    falling back to the stale header."""
+def test_path_outside_the_codepage_keeps_the_codepage(tmp_path):
+    """A cp1252 header whose siblings live under a Greek directory name: the copy
+    names only the staged ASCII files, so it keeps its own codepage and CRLF and
+    never has to spell the directory."""
     directory = tmp_path / "données_Ωμέγα"
     directory.mkdir()
     vhdr, data = _write_triplet(
         directory, "old.eeg", "old.vmrk", newline="\r\n", codepage="ANSI", encoding="cp1252"
     )
-    original = open(vhdr, "rb").read().decode("cp1252")
+    original = open(vhdr, "rb").read()
     with resolved_vhdr(vhdr) as used:
         assert used != vhdr
         patched = open(used, "rb").read()
-    expected = (
-        original.replace("Codepage=ANSI", "Codepage=UTF-8")
-        .replace("DataFile=old.eeg", f"DataFile={directory / (STEM + '.eeg')}")
-        .replace("MarkerFile=old.vmrk", f"MarkerFile={directory / (STEM + '.vmrk')}")
-        .encode("utf-8")
-    )
-    assert patched == expected
+    assert patched == _staged(original)
     rec = Recording.from_file(vhdr)
     _assert_loaded(rec, data)
     assert "C1é" in rec.channels
@@ -352,8 +349,12 @@ def test_eeg_sibling_wins_over_dat(tmp_path):
     vhdr, data = _write_triplet(tmp_path, "old.eeg", "old.vmrk")
     decoy = (data[::-1] // 2).astype(np.int16)  # different values, same shape
     decoy.T.tofile(tmp_path / f"{STEM}.dat")
-    with resolved_vhdr(vhdr) as used:
-        assert f"DataFile={tmp_path / (STEM + '.eeg')}" in open(used, encoding="utf-8").read()
+    staged: dict = {}
+    with resolved_vhdr(vhdr, staged_files=staged) as used:
+        assert "DataFile=data.eeg" in open(used, encoding="utf-8").read()
+        staged_data = os.path.join(os.path.dirname(used), "data.eeg")
+        assert staged[staged_data] == str(tmp_path / f"{STEM}.eeg")
+        assert open(staged_data, "rb").read() == (tmp_path / f"{STEM}.eeg").read_bytes()
     _assert_loaded(Recording.from_file(vhdr), data)
     _assert_streams(vhdr, data)
 
@@ -364,10 +365,7 @@ def test_header_with_utf8_bom(tmp_path):
     assert original.startswith(b"\xef\xbb\xbf")
     with resolved_vhdr(vhdr) as used:
         patched = open(used, "rb").read()
-    expected = original.replace(
-        b"DataFile=old.eeg", f"DataFile={tmp_path / (STEM + '.eeg')}".encode()
-    ).replace(b"MarkerFile=old.vmrk", f"MarkerFile={tmp_path / (STEM + '.vmrk')}".encode())
-    assert patched == expected  # the BOM is kept, not doubled or dropped
+    assert patched == _staged(original)  # the BOM is kept, not doubled or dropped
     _assert_loaded(Recording.from_file(vhdr), data)
     _assert_streams(vhdr, data)
 
@@ -514,9 +512,9 @@ def test_ambiguous_case_insensitive_siblings_are_not_guessed(tmp_path):
 # --- encodings the patched copy has to handle ----------------------------------
 
 
-def test_lone_cr_header_falls_back_to_utf8(tmp_path):
-    """Old-Mac ``\\r`` line endings AND a path the cp1252 codepage cannot spell:
-    the ``Codepage=`` rewrite finds the version line at the first CR.
+def test_lone_cr_header_under_a_path_the_codepage_cannot_spell(tmp_path):
+    """Old-Mac ``\\r`` line endings AND a Greek directory under a cp1252 header:
+    the copy keeps both, since it names only the staged ASCII files.
 
     MNE itself cannot parse a lone-CR header (it finds no ``[Common Infos]``
     section even when every reference is correct), so the check is on the
@@ -528,16 +526,10 @@ def test_lone_cr_header_falls_back_to_utf8(tmp_path):
     vhdr, _ = _write_triplet(
         directory, "old.eeg", "old.vmrk", newline="\r", codepage="ANSI", encoding="cp1252"
     )
-    original = open(vhdr, "rb").read().decode("cp1252")
+    original = open(vhdr, "rb").read()
     with resolved_vhdr(vhdr) as used:
         patched = open(used, "rb").read()
-    expected = (
-        original.replace("Codepage=ANSI", "Codepage=UTF-8")
-        .replace("DataFile=old.eeg", f"DataFile={directory / (STEM + '.eeg')}")
-        .replace("MarkerFile=old.vmrk", f"MarkerFile={directory / (STEM + '.vmrk')}")
-        .encode("utf-8")
-    )
-    assert patched == expected
+    assert patched == _staged(original)
     assert b"\n" not in patched
     with pytest.raises(FileReadError) as info:
         Recording.from_file(vhdr)
@@ -546,9 +538,8 @@ def test_lone_cr_header_falls_back_to_utf8(tmp_path):
 
 def test_no_codepage_latin1_header_under_a_path_latin1_cannot_spell(tmp_path):
     """No ``Codepage=`` line and bytes that are not UTF-8, so MNE decodes the
-    header as Latin-1; the Greek sibling path is not Latin-1, so the copy is
-    written as UTF-8. With no ``Codepage=`` to rewrite, MNE decodes that copy as
-    UTF-8 (its default), which reads every character back unchanged."""
+    header as Latin-1; the Greek sibling path is not Latin-1, but the copy only
+    names the staged ASCII files, so it stays Latin-1 byte for byte."""
     directory = tmp_path / "Ωμέγα"
     directory.mkdir()
     vhdr, data = _write_triplet(directory, "old.eeg", "old.vmrk", codepage=None, encoding="latin-1")
@@ -557,14 +548,7 @@ def test_no_codepage_latin1_header_under_a_path_latin1_cannot_spell(tmp_path):
         original.decode("utf-8")  # the fixture really is not UTF-8
     with resolved_vhdr(vhdr) as used:
         patched = open(used, "rb").read()
-    expected = (
-        original.decode("latin-1")
-        .replace("DataFile=old.eeg", f"DataFile={directory / (STEM + '.eeg')}")
-        .replace("MarkerFile=old.vmrk", f"MarkerFile={directory / (STEM + '.vmrk')}")
-        .encode("utf-8")
-    )
-    assert patched == expected
-    assert b"Codepage" not in patched
+    assert patched == _staged(original)
     rec = Recording.from_file(vhdr)
     _assert_loaded(rec, data)
     assert "C1é" in rec.channels
@@ -584,21 +568,16 @@ def _undecodable_dir(tmp_path) -> pathlib.Path:
 
 
 @pytest.mark.parametrize("codepage", ["UTF-8", None], ids=["utf8", "no-codepage"])
-def test_path_no_encoding_can_spell_raises_a_host_error(tmp_path, codepage):
-    """Siblings exist but not even UTF-8 can spell their path: a specific,
-    untyped error that says so, instead of handing MNE the stale header and
-    letting its FileNotFoundError be recorded as a permanent file failure."""
+def test_path_no_encoding_can_spell_is_still_recovered(tmp_path, codepage):
+    """Siblings exist under a path that no codec can spell (not even UTF-8): the
+    copy never names that path, so the recording reads on both paths."""
     directory = _undecodable_dir(tmp_path)
-    vhdr, _ = _write_triplet(directory, "old.eeg", "old.vmrk", codepage=codepage)
-
-    with pytest.raises(BrainVisionHeaderRecoveryError, match="names missing files"):
-        with resolved_vhdr(vhdr):
-            pass
-    for read in (Recording.from_file, lambda p: _open_stream_source(p, None)):
-        with pytest.raises(BrainVisionHeaderRecoveryError) as info:
-            read(vhdr)
-        assert not isinstance(info.value, BiosigIOError)
-        assert "DataFile=old.eeg" in str(info.value)
+    vhdr, data = _write_triplet(directory, "old.eeg", "old.vmrk", codepage=codepage)
+    original = open(vhdr, "rb").read()
+    with resolved_vhdr(vhdr) as used:
+        assert open(used, "rb").read() == _staged(original)
+    _assert_loaded(Recording.from_file(vhdr), data)
+    _assert_streams(vhdr, data)
 
 
 def test_header_read_exhaustion_is_raised_not_swallowed(tmp_path):
@@ -637,3 +616,35 @@ def test_corrupt_error_type_is_kept_when_the_path_is_rewritten(tmp_path):
     err = brainvision_read_error(OSError(f"{used}: file is truncated"), used, real)
     assert type(err) is CorruptFileError
     assert used not in str(err) and real in str(err)
+
+
+def test_staged_file_in_a_message_names_the_dataset_file(tmp_path):
+    """A message quoting a staged file (``<tmp>/marker.vmrk``) names the dataset
+    file it stood for, not ``<dataset dir>/marker.vmrk``, which does not exist."""
+    from biosigio.importers.brainvision import brainvision_read_error
+
+    tmp = tmp_path / "biosigio-vhdr-x"
+    used = str(tmp / f"{STEM}.vhdr")
+    real = str(tmp_path / f"{STEM}.vhdr")
+    sibling = str(tmp_path / f"{STEM}.VMRK")
+    staged = {str(tmp / "marker.vmrk"): sibling, str(tmp / "data.eeg"): str(tmp_path / "x.eeg")}
+    exc = ValueError(f"could not parse {tmp / 'marker.vmrk'} (header {used})")
+    message = str(brainvision_read_error(exc, used, real, staged))
+    assert f"could not parse {sibling} (header {real})" in message
+    assert "marker.vmrk" not in message and "biosigio-vhdr-" not in message
+
+
+@pytest.mark.skipif(
+    _MNE_RECOVERS_MARKER,
+    reason=f"MNE {mne.__version__} skips a missing MarkerFile= instead of raising on it",
+)
+def test_missing_marker_error_names_the_file_the_header_named(tmp_path):
+    """Stale data (recovered) beside a marker with no sibling at all: MNE < 1.13
+    raises on the staged ``marker.vmrk``, and the error names the header's file."""
+    vhdr, _ = _write_triplet(tmp_path, "old.eeg", "gone.vmrk")
+    os.remove(tmp_path / f"{STEM}.vmrk")
+    for read in (Recording.from_file, lambda p: _open_stream_source(p, None)):
+        with pytest.raises(FileReadError) as info:
+            read(vhdr)
+        assert str(tmp_path / "gone.vmrk") in str(info.value)
+        assert "biosigio-vhdr-" not in str(info.value)
