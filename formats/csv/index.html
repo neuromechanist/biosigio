@@ -2920,6 +2920,7 @@
 <ul>
 <li>When a specialized format (like Trigno) is detected, the importer will suggest using the appropriate specialized importer</li>
 <li>For headerless files, auto-generated channel names will be "Channel_0", "Channel_1", etc.</li>
+<li>A header that repeats a column name keeps every column: pandas renames the repeats (<code>EMG</code>, <code>EMG.1</code>, ...). A repeated name in <code>channel_names</code> or <code>columns</code> raises <code>ValueError</code> naming it</li>
 <li>If no time column is found, a sample frequency must be provided to generate a time index </li>
 </ul>
 

@@ -2939,7 +2939,7 @@
 <p>Two attributes record what the sidecar did:</p>
 <ul>
 <li><code>channels[].bids_unit</code> on a channel whose declared unit was recorded rather than adopted (a discrete trigger channel, or a unit that is not convertible from the importer's), so the BIDS claim survives without being asserted over values that contradict it.</li>
-<li><code>channels_tsv_units</code> on the root group, the per-file summary (<code>converted</code>, <code>relabelled</code>, <code>kept_importer_unit</code>, <code>units_column_present</code>). It is absent when no sidecar was applied.</li>
+<li><code>channels_tsv_units</code> on the root group, the per-file summary (<code>converted</code>, <code>relabelled</code>, <code>kept_importer_unit</code>, <code>units_column_present</code>, and <code>matched_case_insensitive</code> when a sidecar row matched a channel only by ignoring case). It is absent when no sidecar was applied.</li>
 </ul>
 <p>Both are additive, so <code>format_version</code> stays at 2.</p>
 <p><code>force_modality</code> (streaming only) still wins over the sidecar for <strong>grouping</strong>: it pins every channel to one modality, matching the BIDS datatype suffix a converter is working from, while the sidecar's <code>type</code> still sets each channel's <code>channel_type</code>.</p>

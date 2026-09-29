@@ -3026,7 +3026,7 @@ MNE's order is not guaranteed, so the two can differ in that case.</p>
 <li>When exporting to EDF/BDF, biosigIO automatically handles scaling to maximize precision</li>
 <li>EDF/BDF export requires a single sampling rate across all channels; if per-channel rates differ, export raises <code>ValueError</code>. Resample channels to a common rate first</li>
 <li>With <code>format='auto'</code>, <code>to_edf('output')</code> selects either <code>.edf</code> (16-bit) or <code>.bdf</code> (24-bit) based on signal analysis and appends the matching extension</li>
-<li>EDF has limitations on channel naming (maximum 16 characters)</li>
+<li>EDF stores a channel label in 16 characters. A longer label is truncated, and when truncation would give two channels the same label (every Delsys Trigno channel of one sensor, <code>Mini sensor 10: ACC.X 10</code>, <code>Mini sensor 10: ACC.Y 10</code>, ..., shares its first 16 characters), those channels are numbered within the 16 characters instead (<code>Mini sensor 10-0</code>, <code>Mini sensor 10-1</code>, ...) and a warning lists them. In the <code>_channels.tsv</code> sidecar, only those numbered channels are named by the label written to the file, so their rows match the file on re-import; every other channel keeps its full label there, including one that is truncated but stays unique (as in earlier releases, such a row does not match the truncated label on re-import)</li>
 </ul>
 
 

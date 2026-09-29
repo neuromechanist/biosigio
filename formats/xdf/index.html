@@ -925,6 +925,23 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="Multi-Stream Handling">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#repeated-channel-labels" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Repeated channel labels
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
       
         <li class="md-nav__item">
@@ -2742,6 +2759,23 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="Multi-Stream Handling">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#repeated-channel-labels" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Repeated channel labels
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
       
         <li class="md-nav__item">
@@ -2891,15 +2925,33 @@
 <ol>
 <li>Resamples all streams to a common time base</li>
 <li>Uses the highest sampling rate among selected streams</li>
-<li>Preserves channel labels with stream name prefixes for disambiguation</li>
+<li>Keeps each channel's own label from the stream header; a channel with no label gets <code>&lt;stream name&gt;_Ch&lt;n&gt;</code></li>
 </ol>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="c1"># Load EEG and EMG together (different sample rates)</span>
 <a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="n">rec</span> <span class="o">=</span> <span class="n">Recording</span><span class="o">.</span><span class="n">from_file</span><span class="p">(</span><span class="s1">'recording.xdf'</span><span class="p">,</span> <span class="n">stream_types</span><span class="o">=</span><span class="p">[</span><span class="s1">'EEG'</span><span class="p">,</span> <span class="s1">'EMG'</span><span class="p">])</span>
 <a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a>
-<a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a><span class="c1"># Channels will be named like: "StreamName_ChannelLabel"</span>
-<a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a><span class="nb">print</span><span class="p">(</span><span class="nb">list</span><span class="p">(</span><span class="n">rec</span><span class="o">.</span><span class="n">channels</span><span class="o">.</span><span class="n">keys</span><span class="p">()))</span>
-<a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a><span class="c1"># ['MyEEG_Fp1', 'MyEEG_Fp2', ..., 'MyEMG_Bicep', 'MyEMG_Tricep']</span>
+<a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a><span class="nb">print</span><span class="p">(</span><span class="nb">list</span><span class="p">(</span><span class="n">rec</span><span class="o">.</span><span class="n">channels</span><span class="o">.</span><span class="n">keys</span><span class="p">()))</span>
+<a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a><span class="c1"># ['Fp1', 'Fp2', ..., 'Bicep', 'Tricep']</span>
 </code></pre></div>
+<h3 id="repeated-channel-labels">Repeated channel labels<a class="headerlink" href="#repeated-channel-labels" title="Permanent link">&para;</a></h3>
+<p>Streams often share labels: two amplifiers that each call their first channel <code>Ch1</code>, or two streams with the same name.
+A <code>Recording</code> is keyed by label, so no two channels may share one.
+The first occurrence keeps its label, and each later one, in stream order, becomes <code>&lt;label&gt;_1</code>, <code>&lt;label&gt;_2</code>, and so on.
+A suffix never takes a label that some stream really uses:
+with streams <code>A: [Ch1, Ch1]</code> and <code>B: [Ch1_1]</code>, the channels are <code>Ch1</code>, <code>Ch1_2</code> and <code>Ch1_1</code>, and <code>Ch1_1</code> is stream B's own channel.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="n">rec</span> <span class="o">=</span> <span class="n">Recording</span><span class="o">.</span><span class="n">from_file</span><span class="p">(</span><span class="s1">'two_amplifiers.xdf'</span><span class="p">)</span>
+<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="nb">print</span><span class="p">(</span><span class="nb">list</span><span class="p">(</span><span class="n">rec</span><span class="o">.</span><span class="n">channels</span><span class="o">.</span><span class="n">keys</span><span class="p">()))</span>
+<a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a><span class="c1"># ['Ch1', 'Ch2', 'Ch1_1', 'Ch2_1']</span>
+<a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a><span class="nb">print</span><span class="p">(</span><span class="n">rec</span><span class="o">.</span><span class="n">get_metadata</span><span class="p">(</span><span class="s1">'channel_labels_deduplicated'</span><span class="p">))</span>
+<a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a><span class="c1"># {'Ch1_1': 'Ch1', 'Ch2_1': 'Ch2'}</span>
+</code></pre></div>
+<p>A warning names each renamed channel with the stream it came from,
+and the renames are recorded in the metadata under <code>channel_labels_deduplicated</code> as <code>{new_label: original_label}</code>, the same key the EDF/BDF, WFDB, EEGLAB, neo, Delsys Trigno and Zarr importers use.
+A recording whose labels are already unique carries no such entry.</p>
+<p>This is the scheme XDF import has always used, so no channel that imported under its own label before is renamed now.
+It keeps the <code>_1</code> suffix rather than the <code>-0</code>, <code>-1</code> suffixes of <a href="../edf/#repeated-channel-labels">EDF repeated channel labels</a>,
+and it does not prefix the stream name: a prefix would rename channels that import unchanged today,
+and it still could not separate a label repeated within one stream, or two streams that share a name.</p>
 <h2 id="stream-types">Stream Types<a class="headerlink" href="#stream-types" title="Permanent link">&para;</a></h2>
 <p>Common LSL stream types you might encounter:</p>
 <table>
@@ -2955,8 +3007,8 @@
 <li>Channel labels (e.g., "EMG_Bicep" -&gt; EMG)</li>
 <li>A default type you can specify</li>
 </ol>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="c1"># Set default channel type for streams without explicit type info</span>
-<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="n">rec</span> <span class="o">=</span> <span class="n">Recording</span><span class="o">.</span><span class="n">from_file</span><span class="p">(</span><span class="s1">'recording.xdf'</span><span class="p">,</span> <span class="n">default_channel_type</span><span class="o">=</span><span class="s1">'EMG'</span><span class="p">)</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="c1"># Set default channel type for streams without explicit type info</span>
+<a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a><span class="n">rec</span> <span class="o">=</span> <span class="n">Recording</span><span class="o">.</span><span class="n">from_file</span><span class="p">(</span><span class="s1">'recording.xdf'</span><span class="p">,</span> <span class="n">default_channel_type</span><span class="o">=</span><span class="s1">'EMG'</span><span class="p">)</span>
 </code></pre></div>
 <h2 id="metadata">Metadata<a class="headerlink" href="#metadata" title="Permanent link">&para;</a></h2>
 <p>Loaded XDF files include metadata such as:</p>
@@ -2966,22 +3018,23 @@
 <li><code>stream_count</code>: Number of selected streams</li>
 <li><code>srate</code>: Sampling rate of the reference (highest-rate) stream</li>
 </ul>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="n">rec</span> <span class="o">=</span> <span class="n">Recording</span><span class="o">.</span><span class="n">from_file</span><span class="p">(</span><span class="s1">'recording.xdf'</span><span class="p">)</span>
-<a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a><span class="nb">print</span><span class="p">(</span><span class="n">rec</span><span class="o">.</span><span class="n">get_metadata</span><span class="p">(</span><span class="s1">'stream_count'</span><span class="p">))</span>
-<a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a><span class="nb">print</span><span class="p">(</span><span class="n">rec</span><span class="o">.</span><span class="n">get_metadata</span><span class="p">(</span><span class="s1">'srate'</span><span class="p">))</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="n">rec</span> <span class="o">=</span> <span class="n">Recording</span><span class="o">.</span><span class="n">from_file</span><span class="p">(</span><span class="s1">'recording.xdf'</span><span class="p">)</span>
+<a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a><span class="nb">print</span><span class="p">(</span><span class="n">rec</span><span class="o">.</span><span class="n">get_metadata</span><span class="p">(</span><span class="s1">'stream_count'</span><span class="p">))</span>
+<a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a><span class="nb">print</span><span class="p">(</span><span class="n">rec</span><span class="o">.</span><span class="n">get_metadata</span><span class="p">(</span><span class="s1">'srate'</span><span class="p">))</span>
 </code></pre></div>
 <h2 id="preserving-lsl-timestamps">Preserving LSL Timestamps<a class="headerlink" href="#preserving-lsl-timestamps" title="Permanent link">&para;</a></h2>
 <p>XDF files store per-sample timestamps from the Lab Streaming Layer clock. When exporting to formats like EDF that require regular sampling, these timestamps are normally lost during resampling.</p>
 <p>To preserve the original LSL timestamps, use the <code>include_timestamps</code> option:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="c1"># Load with timestamp preservation</span>
-<a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a><span class="n">rec</span> <span class="o">=</span> <span class="n">Recording</span><span class="o">.</span><span class="n">from_file</span><span class="p">(</span><span class="s1">'recording.xdf'</span><span class="p">,</span> <span class="n">include_timestamps</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
-<a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a>
-<a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a><span class="c1"># Each stream gets a timestamp channel named "{stream_name}_LSL_timestamps"</span>
-<a id="__codelineno-6-5" name="__codelineno-6-5" href="#__codelineno-6-5"></a><span class="nb">print</span><span class="p">(</span><span class="nb">list</span><span class="p">(</span><span class="n">rec</span><span class="o">.</span><span class="n">channels</span><span class="o">.</span><span class="n">keys</span><span class="p">()))</span>
-<a id="__codelineno-6-6" name="__codelineno-6-6" href="#__codelineno-6-6"></a><span class="c1"># ['MyEMG_Ch1', 'MyEMG_Ch2', 'MyEMG_LSL_timestamps']</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="c1"># Load with timestamp preservation</span>
+<a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a><span class="n">rec</span> <span class="o">=</span> <span class="n">Recording</span><span class="o">.</span><span class="n">from_file</span><span class="p">(</span><span class="s1">'recording.xdf'</span><span class="p">,</span> <span class="n">include_timestamps</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a>
+<a id="__codelineno-7-4" name="__codelineno-7-4" href="#__codelineno-7-4"></a><span class="c1"># Each stream gets a timestamp channel named "{stream_name}_LSL_timestamps"</span>
+<a id="__codelineno-7-5" name="__codelineno-7-5" href="#__codelineno-7-5"></a><span class="nb">print</span><span class="p">(</span><span class="nb">list</span><span class="p">(</span><span class="n">rec</span><span class="o">.</span><span class="n">channels</span><span class="o">.</span><span class="n">keys</span><span class="p">()))</span>
+<a id="__codelineno-7-6" name="__codelineno-7-6" href="#__codelineno-7-6"></a><span class="c1"># ['MyEMG_Ch1', 'MyEMG_Ch2', 'MyEMG_LSL_timestamps']</span>
 </code></pre></div>
 <p>Timestamp channels:</p>
 <ul>
+<li>Are created once per stream, so two streams that share a name each keep their timestamps; the second becomes <code>{stream_name}_LSL_timestamps_1</code>, and a data channel that already carries a timestamp channel's name keeps it (see <a href="#repeated-channel-labels">Repeated channel labels</a>)</li>
 <li>Contain the original LSL timestamps in seconds</li>
 <li>Are marked with <code>channel_type='MISC'</code> and <code>physical_dimension='s'</code></li>
 <li>Are resampled along with the data when multiple streams have different rates</li>
@@ -2995,11 +3048,11 @@
 </ul>
 <h2 id="marker-streams">Marker Streams<a class="headerlink" href="#marker-streams" title="Permanent link">&para;</a></h2>
 <p>Marker/event streams contain string data and are not loaded as signal channels. Use <code>summarize_xdf()</code> to inspect marker streams:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="n">summary</span> <span class="o">=</span> <span class="n">summarize_xdf</span><span class="p">(</span><span class="s1">'recording.xdf'</span><span class="p">)</span>
-<a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a><span class="n">marker_stream</span> <span class="o">=</span> <span class="n">summary</span><span class="o">.</span><span class="n">get_stream_by_name</span><span class="p">(</span><span class="s1">'EventMarkers'</span><span class="p">)</span>
-<a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a><span class="k">if</span> <span class="n">marker_stream</span><span class="p">:</span>
-<a id="__codelineno-7-4" name="__codelineno-7-4" href="#__codelineno-7-4"></a>    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"Format: </span><span class="si">{</span><span class="n">marker_stream</span><span class="o">.</span><span class="n">channel_format</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>  <span class="c1"># 'string'</span>
-<a id="__codelineno-7-5" name="__codelineno-7-5" href="#__codelineno-7-5"></a>    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"Events: </span><span class="si">{</span><span class="n">marker_stream</span><span class="o">.</span><span class="n">sample_count</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="n">summary</span> <span class="o">=</span> <span class="n">summarize_xdf</span><span class="p">(</span><span class="s1">'recording.xdf'</span><span class="p">)</span>
+<a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a><span class="n">marker_stream</span> <span class="o">=</span> <span class="n">summary</span><span class="o">.</span><span class="n">get_stream_by_name</span><span class="p">(</span><span class="s1">'EventMarkers'</span><span class="p">)</span>
+<a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a><span class="k">if</span> <span class="n">marker_stream</span><span class="p">:</span>
+<a id="__codelineno-8-4" name="__codelineno-8-4" href="#__codelineno-8-4"></a>    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"Format: </span><span class="si">{</span><span class="n">marker_stream</span><span class="o">.</span><span class="n">channel_format</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>  <span class="c1"># 'string'</span>
+<a id="__codelineno-8-5" name="__codelineno-8-5" href="#__codelineno-8-5"></a>    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"Events: </span><span class="si">{</span><span class="n">marker_stream</span><span class="o">.</span><span class="n">sample_count</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
 </code></pre></div>
 <h2 id="requirements">Requirements<a class="headerlink" href="#requirements" title="Permanent link">&para;</a></h2>
 <p>The XDF importer requires the <code>pyxdf</code> package. It is included as a core

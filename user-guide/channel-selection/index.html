@@ -2731,6 +2731,10 @@
 <a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a><span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"Original channels: </span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">rec</span><span class="o">.</span><span class="n">channels</span><span class="p">)</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
 <a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a><span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"Selected channels: </span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">subset_emg</span><span class="o">.</span><span class="n">channels</span><span class="p">)</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
 </code></pre></div>
+<p>The names can come in any iterable, not only a list:
+a tuple, a set, <code>rec.channels.keys()</code>, a numpy array, or a pandas <code>Index</code> or <code>Series</code>.
+Each name may appear once: <code>select_channels(['EMG1', 'EMG1'])</code> raises <code>ValueError</code>,
+because a second copy of a column would leave the new recording's signals and channel table disagreeing.</p>
 <h2 id="selecting-channels-by-type">Selecting Channels by Type<a class="headerlink" href="#selecting-channels-by-type" title="Permanent link">&para;</a></h2>
 <p>biosigIO allows you to select channels based on their type:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="c1"># Get available channel types</span>

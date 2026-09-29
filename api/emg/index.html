@@ -3570,13 +3570,19 @@ imported from any supported format.</p>
 
         <p>Select specific channels from the data and return a new Recording object.</p>
 <p>Args:
-    channels: Channel name or list of channel names to select. If None and
-            channel_type is specified, selects all channels of that type.
+    channels: Channel name, or an iterable of channel names (list, tuple,
+            dict keys, numpy array, pandas Index or Series), to select. If
+            None and channel_type is specified, selects all channels of
+            that type.
     channel_type: Type of channels to select ('EMG', 'ACC', 'GYRO', etc.).
                 If specified with channels, filters the selection to only
                 channels of this type.</p>
 <p>Returns:
     Recording: A new Recording object containing only the selected channels</p>
+<p>Raises:
+    ValueError: If no selection is given, a named channel does not exist,
+        a name is listed more than once, or no channel matches the type
+        or modality filter.</p>
 <p>Examples:
     # Select specific channels
     new_rec = rec.select_channels(['EMG1', 'ACC1'])</p>

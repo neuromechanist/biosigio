@@ -2762,6 +2762,7 @@ preceding <code>Label:</code> lines.</p>
 <li>The importer reads each channel's sampling frequency from its <code>Label:</code> header line</li>
 <li>Column names may vary between different Trigno system versions</li>
 <li>Some metadata may be missing depending on the export settings</li>
+<li>Each data column is matched to its <code>Label:</code> line by label. Trigno's own labels carry the sensor number, so its exports do not repeat one; a file whose <code>Label:</code> lines do repeat a label still keeps every channel: the n-th column headed with that label takes the n-th <code>Label:</code> line's rate and unit, the first keeps the label, and each later one becomes <code>&lt;label&gt;_1</code>, <code>&lt;label&gt;_2</code>, ... (never a label the file itself uses). The renames are logged and recorded in the metadata as <code>channel_labels_deduplicated</code> (<code>{new_label: original_label}</code>). Earlier releases kept only the first such column</li>
 <li>Channels in a Trigno export often have different sampling rates (e.g. EMG vs ACC); EDF/BDF export requires a single rate, so resample to a common rate before exporting</li>
 </ul>
 
