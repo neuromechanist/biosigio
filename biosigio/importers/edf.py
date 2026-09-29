@@ -11,6 +11,8 @@ from ._edf_tolerant import classify_pyedflib_error, read_edf_tolerant
 from ._labels import unique_channel_labels
 from .base import BaseImporter
 
+logger = logging.getLogger(__name__)
+
 # Accepted `mixed_rate` policies for a recording whose signals carry differing
 # per-channel sampling rates (EDF/BDF allow this; e.g. PSG: EEG ~200 Hz + SpO2
 # ~12.5 Hz). "error" (default) refuses to load -- biosigIO stores one uniform grid
@@ -265,10 +267,17 @@ class EDFImporter(BaseImporter):
                     raise
                 try:
                     pairs, events, file_info = self._collect_via_fallback(filepath, fallback_reason)
-                except ImportError:
+                except ImportError as import_err:
                     # MNE (the `meg` extra) isn't installed -- degrade to the
-                    # original pyedflib error rather than leaving this silent.
-                    raise open_exc from None
+                    # original pyedflib error rather than leaving this silent,
+                    # chained to the ImportError so its install hint survives.
+                    logger.warning(
+                        "EDF/BDF file %s is recoverable by the tolerant reader, but that "
+                        "needs MNE-Python (the 'meg' extra), which is not installed; "
+                        "raising the original pyedflib error.",
+                        filepath,
+                    )
+                    raise open_exc from import_err
                 recording_info: dict = {}
             else:
                 fallback_reason = None
@@ -422,4 +431,4 @@ class EDFImporter(BaseImporter):
                 try:
                     edf_reader.close()
                 except Exception as close_exc:
-                    logging.warning("EDF reader close() failed for %s: %s", filepath, close_exc)
+                    logger.warning("EDF reader close() failed for %s: %s", filepath, close_exc)
