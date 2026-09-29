@@ -361,13 +361,20 @@ def _open_stream_source(filepath: str, force_modality: str | None):
         raw = mne.io.read_raw_mef(filepath, preload=False, verbose="ERROR")
         return _MneSource(filepath, force_modality, raw=raw)
     if ext == ".vhdr":
-        # Same stale DataFile=/MarkerFile= recovery as the in-memory importer.
-        from ..importers.brainvision import resolved_vhdr
+        # Same stale DataFile=/MarkerFile= recovery as the in-memory importer,
+        # recorded in the store's metadata the same way.
+        from ..importers.brainvision import HEADER_RECOVERED_KEY, resolved_vhdr
 
         mne = require_mne()
-        with resolved_vhdr(filepath) as vhdr:
+        recovered: dict = {}
+        with resolved_vhdr(filepath, substitutions=recovered) as vhdr:
             raw = mne.io.read_raw_brainvision(vhdr, preload=False, verbose="ERROR")
-        return _MneSource(filepath, force_modality, raw=raw)
+        return _MneSource(
+            filepath,
+            force_modality,
+            raw=raw,
+            extra_metadata={HEADER_RECOVERED_KEY: recovered} if recovered else None,
+        )
     if ext == "" and os.path.isdir(stripped):
         # Raises UnsupportedFormatError with a clear message if this doesn't
         # look like a BTi directory (same check the in-memory importer uses),
