@@ -64,7 +64,8 @@ API rather than returning raw containers:
   must be unique: `add_channel()` raises `ValueError` on a label the Recording
   already has, so an importer for a format that allows repeated labels has to
   make them unique first (the EDF, WFDB and Zarr importers use
-  `biosigio.importers._labels.unique_channel_labels`).
+  `biosigio.importers._labels.unique_channel_labels`; the XDF, EEGLAB, neo and
+  Delsys Trigno importers use `suffix_repeated_labels` from the same module).
 - **channels**: each `add_channel()` call records per-channel metadata in
   `Recording.channels`:
 
