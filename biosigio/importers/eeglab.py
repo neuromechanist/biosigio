@@ -28,7 +28,12 @@ from scipy.io import loadmat
 
 from ..core.emg import Recording
 from ..core.modality import infer_modality_from_channel_type
-from ..exceptions import NotContinuousRecordingError, classify_read_error, is_resource_exhaustion
+from ..exceptions import (
+    FileReadError,
+    NotContinuousRecordingError,
+    classify_read_error,
+    is_resource_exhaustion,
+)
 from .base import BaseImporter
 
 # MATLAB .mat files (any version) open with a 128-byte descriptive text header.
@@ -577,10 +582,14 @@ class EEGLABImporter(BaseImporter):
                 elif all(key in f for key in ("nbchan", "srate", "pnts", "data")):
                     eeg = f
                 else:
-                    raise ValueError(
-                        f"MATLAB v7.3 file has no top-level 'EEG' struct and no flat "
-                        f"nbchan/srate/pnts/data fields at the root; "
-                        f"the file may be corrupt ({filepath})"
+                    # A valid HDF5 container that simply holds some other MATLAB
+                    # variable(s). Raised as the generic typed read error (still
+                    # terminal: re-reading will not change it), never with the
+                    # word "corrupt", which would make classify_read_error call a
+                    # healthy file CorruptFileError.
+                    raise FileReadError(
+                        f"{filepath} is not an EEGLAB v7.3 dataset (no 'EEG' group "
+                        "and no flat nbchan/srate/pnts/data at the root)"
                     )
 
                 # nbchan/srate/pnts/trials come back as float arrays (see

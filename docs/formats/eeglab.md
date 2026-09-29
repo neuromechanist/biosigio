@@ -69,7 +69,8 @@ extension -- both forms are `.set`.
    also carry the struct's fields flat at the HDF5 root with no `EEG` group;
    when the root holds `nbchan`, `srate`, `pnts` and `data`, the root is read
    as the struct (an `EEG` group wins when both are present). A file with
-   neither layout is reported as corrupt. Header scalars
+   neither layout raises `FileReadError` saying it is not an EEGLAB v7.3
+   dataset (not `CorruptFileError`: the HDF5 container itself is valid). Header scalars
    round-trip through HDF5 as 1x1 float arrays rather than true scalars, so
    they are flattened and coerced to int/float explicitly
 2. Reading the signal matrix from `EEG.data`. HDF5 stores the matrix
