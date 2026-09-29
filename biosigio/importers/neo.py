@@ -21,6 +21,7 @@ by :meth:`Recording.from_file`) for per-channel types.
 neo is an optional, heavy dependency, imported lazily via :func:`require_neo`.
 """
 
+import logging
 import warnings
 
 import numpy as np
@@ -28,7 +29,10 @@ import pandas as pd
 
 from ..core.emg import Recording
 from ..exceptions import is_resource_exhaustion
+from ._labels import DEDUPLICATED_LABELS_KEY, suffix_repeated_labels
 from .base import BaseImporter
+
+logger = logging.getLogger(__name__)
 
 
 def require_neo():
@@ -51,20 +55,6 @@ def _physical_dimension(signal) -> str:
     """Map a neo AnalogSignal's units to an EDF-style physical-dimension string."""
     dim = str(signal.units.dimensionality)
     return dim if dim and dim != "dimensionless" else "n/a"
-
-
-def _unique_label(name: str, used: set[str]) -> str:
-    """Return ``name``, or the first free ``name_<n>``, so merged streams stay distinct.
-
-    Counter-based so it always terminates, even when several disambiguated names
-    already collide (e.g. ``used = {"ch", "ch_0", "ch_0_0"}``).
-    """
-    if name not in used:
-        return name
-    i = 0
-    while f"{name}_{i}" in used:
-        i += 1
-    return f"{name}_{i}"
 
 
 def _channel_names(signal, stream_index: int, n_channels: int) -> list[str]:
@@ -137,19 +127,36 @@ class NeoImporter(BaseImporter):
         selected = self._select_streams(seg.analogsignals, stream, filepath)
 
         rec = Recording()
-        used: set[str] = set()
+        arrays = []
+        for sig in selected:
+            data = np.asarray(sig.magnitude)
+            arrays.append(data[:, np.newaxis] if data.ndim == 1 else data)
+        # Merged streams can repeat a name. The first occurrence keeps it and later
+        # ones become <name>_0, <name>_1, ..., never a name some stream really uses,
+        # chosen over every stream at once so a later stream's genuine name is
+        # not taken by an earlier stream's suffix.
+        stream_names = [
+            _channel_names(sig, idx, data.shape[1])
+            for idx, (sig, data) in enumerate(zip(selected, arrays, strict=True))
+        ]
+        labels, renames = suffix_repeated_labels(
+            [name for names in stream_names for name in names], separator="_", start=0
+        )
+        if renames:
+            logger.warning(
+                "neo channel names are not unique in %s; renamed %s",
+                filepath,
+                ", ".join(f"{new!r} ({old!r})" for new, old in renames.items()),
+            )
+            rec.set_metadata(DEDUPLICATED_LABELS_KEY, renames)
+        next_label = iter(labels)
         with warnings.catch_warnings():
             warnings.simplefilter("ignore", category=pd.errors.PerformanceWarning)
-            for idx, sig in enumerate(selected):
-                data = np.asarray(sig.magnitude)
-                if data.ndim == 1:
-                    data = data[:, np.newaxis]
+            for sig, data, names in zip(selected, arrays, stream_names, strict=True):
                 fs = float(sig.sampling_rate.rescale("Hz").magnitude)
                 dimension = _physical_dimension(sig)
-                names = _channel_names(sig, idx, data.shape[1])
-                for col, name in enumerate(names):
-                    label = _unique_label(name, used)  # keep merged streams distinct
-                    used.add(label)
+                for col in range(len(names)):
+                    label = next(next_label)
                     rec.add_channel(
                         label=label,
                         data=data[:, col],
