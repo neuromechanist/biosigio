@@ -75,5 +75,5 @@ print(f"ACC channels: {acc_channels}")
 - The importer reads each channel's sampling frequency from its `Label:` header line
 - Column names may vary between different Trigno system versions
 - Some metadata may be missing depending on the export settings
-- Each data column is matched to its `Label:` line by label, so a file whose `Label:` lines repeat a label raises `ValueError` rather than dropping the repeated channel. Trigno's own labels carry the sensor number, so its exports do not repeat one
+- Each data column is matched to its `Label:` line by label. Trigno's own labels carry the sensor number, so its exports do not repeat one; a file whose `Label:` lines do repeat a label still keeps every channel: the n-th column headed with that label takes the n-th `Label:` line's rate and unit, the first keeps the label, and each later one becomes `<label>_1`, `<label>_2`, ... (never a label the file itself uses). The renames are logged and recorded in the metadata as `channel_labels_deduplicated` (`{new_label: original_label}`). Earlier releases kept only the first such column
 - Channels in a Trigno export often have different sampling rates (e.g. EMG vs ACC); EDF/BDF export requires a single rate, so resample to a common rate before exporting

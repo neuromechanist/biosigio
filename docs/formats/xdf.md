@@ -103,7 +103,7 @@ print(rec.get_metadata('channel_labels_deduplicated'))
 ```
 
 A warning names each renamed channel with the stream it came from,
-and the renames are recorded in the metadata under `channel_labels_deduplicated` as `{new_label: original_label}`, the same key the EDF/BDF, WFDB, EEGLAB, neo and Zarr importers use.
+and the renames are recorded in the metadata under `channel_labels_deduplicated` as `{new_label: original_label}`, the same key the EDF/BDF, WFDB, EEGLAB, neo, Delsys Trigno and Zarr importers use.
 A recording whose labels are already unique carries no such entry.
 
 This is the scheme XDF import has always used, so no channel that imported under its own label before is renamed now.

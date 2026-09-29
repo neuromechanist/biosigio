@@ -9,6 +9,7 @@ the samples behind each label survive. The EDF/BDF side lives in
 """
 
 import struct
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -282,10 +283,60 @@ def test_trigno_distinct_labels_import(tmp_path):
     assert list(rec.channels) == ["Sensor 1: EMG 1", "Sensor 2: EMG 2"]
 
 
-def test_trigno_repeated_label_is_refused_not_dropped(tmp_path):
-    path = _write_trigno(tmp_path / "dup.csv", ["Sensor 1: EMG 1", "Sensor 1: EMG 1"])
-    with pytest.raises(ValueError, match="repeats the channel label 'Sensor 1: EMG 1'"):
-        TrignoImporter().load(path)
+def test_trigno_repeated_label_keeps_every_channel(tmp_path):
+    """A repeated ``Label:`` line maps to its column by order; no channel is lost."""
+    labels = ["Sensor 1: EMG 1", "Sensor 2: ACC.X 2", "Sensor 1: EMG 1", "Sensor 1: EMG 1_1"]
+    path = _write_trigno(tmp_path / "dup.csv", labels)
+    rec = TrignoImporter().load(path)
+
+    # The second "Sensor 1: EMG 1" cannot take "_1": the file uses that label itself.
+    assert list(rec.channels) == [
+        "Sensor 1: EMG 1",
+        "Sensor 2: ACC.X 2",
+        "Sensor 1: EMG 1_2",
+        "Sensor 1: EMG 1_1",
+    ]
+    assert list(rec.signals.columns) == list(rec.channels)
+    assert rec.metadata[DEDUPLICATED_LABELS_KEY] == {"Sensor 1: EMG 1_2": "Sensor 1: EMG 1"}
+    # _write_trigno puts 100 * column-position into each column, so the data
+    # proves each channel kept its own column.
+    assert [rec.signals[c].iloc[1] for c in rec.channels] == [1, 101, 201, 301]
+    assert [info["channel_type"] for info in rec.channels.values()] == [
+        "EMG",
+        "ACC",
+        "EMG",
+        "EMG",
+    ]
+
+
+def test_trigno_repeated_label_takes_each_lines_metadata_in_order(tmp_path):
+    """The n-th column headed ``L`` takes the n-th ``Label: L`` line's rate and unit."""
+    path = tmp_path / "rates.csv"
+    path.write_text(
+        "Label: EMG 1 Sampling frequency: 1.000000e+002 Number of points: 3 "
+        "start: 0.000000e+000 Unit: V Domain Unit: s\n"
+        "Label: EMG 1 Sampling frequency: 1.000000e+002 Number of points: 3 "
+        "start: 0.000000e+000 Unit: mV Domain Unit: s\n"
+        "\n"
+        'X[s],"EMG 1",X[s],"EMG 1"\n'
+        "0.0,1,0.0,10\n0.01,2,0.01,20\n0.02,3,0.02,30\n"
+    )
+    rec = TrignoImporter().load(str(path))
+    assert list(rec.channels) == ["EMG 1", "EMG 1_1"]
+    assert [info["physical_dimension"] for info in rec.channels.values()] == ["V", "mV"]
+    assert list(rec.signals["EMG 1_1"]) == [10, 20, 30]
+
+
+def test_trigno_example_file_records_no_renames():
+    """The bundled Delsys export has unique labels and imports every channel by name."""
+    path = Path(__file__).resolve().parents[2] / "examples" / "truncated_trigno_sample.csv"
+    rec = TrignoImporter().load(str(path))
+    assert list(rec.channels) == [
+        f"Mini sensor {n}: {kind} {n}"
+        for n in (10, 11)
+        for kind in ("EMG", "ACC.X", "ACC.Y", "ACC.Z", "GYRO.X", "GYRO.Y", "GYRO.Z")
+    ]
+    assert DEDUPLICATED_LABELS_KEY not in rec.metadata
 
 
 # --- Arrow / Feather ------------------------------------------------------------
