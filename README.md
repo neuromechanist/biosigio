@@ -15,6 +15,8 @@ The documentation including installation instructions, examples, and API referen
 
 What changed in each release is in [CHANGELOG.md](https://github.com/neuromechanist/biosigio/blob/main/CHANGELOG.md).
 
+**Breaking in 1.2.10:** `Recording.select_channels` raises `ValueError` for a name listed twice, and inputs whose repeated channel labels collide with a label the file itself uses (or a `channels.tsv` that differs from the data file only in case) can import with different channel names, types or units than in 1.2.9; see the changelog.
+
 **Breaking in 1.2.9:** `Recording.add_channel` raises `ValueError` for a label that already exists instead of silently replacing that channel; use `set_channel` to change metadata or assign `rec.signals[label]` to replace samples.
 
 ## Features
