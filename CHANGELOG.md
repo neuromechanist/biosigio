@@ -10,7 +10,7 @@ Entries before 1.2.9 are condensed from the
 [GitHub Releases](https://github.com/neuromechanist/biosigio/releases),
 which keep the full notes; releases older than 1.1.0 are listed there only.
 
-## [1.2.9] - 2026-09-28
+## [1.2.9] - 2026-09-29
 
 ### Breaking
 
