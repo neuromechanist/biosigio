@@ -205,15 +205,18 @@ def test_csv_repeated_header_keeps_every_column(tmp_path):
 # --- Delsys Trigno --------------------------------------------------------------
 
 
-def _write_trigno(path, labels: list[str]) -> str:
+def _write_trigno(path, labels: list[str], n_points: int = 3) -> str:
     """A Trigno export in the layout of ``examples/truncated_trigno_sample.csv``."""
     meta = [
-        f"Label: {label} Sampling frequency: 1.000000e+002 Number of points: 3 "
+        f"Label: {label} Sampling frequency: 1.000000e+002 Number of points: {n_points} "
         "start: 0.000000e+000 Unit: V Domain Unit: s"
         for label in labels
     ]
     header = ",".join(f'X[s],"{label}"' for label in labels)
-    rows = [",".join(f"{t / 100},{t + 10 * i}" for i in range(len(labels))) for t in range(3)]
+    rows = [
+        ",".join(f"{t / 100},{t % 50 + 100 * i}" for i in range(len(labels)))
+        for t in range(n_points)
+    ]
     path.write_text("\n".join([*meta, "", header, *rows]) + "\n")
     return str(path)
 
@@ -247,3 +250,23 @@ def test_feather_with_a_repeated_column_is_refused(tmp_path):
     with pytest.raises(ValueError, match=r"repeats signal column\(s\) \['C3'\]"):
         Recording.from_file(str(tmp_path / "edited.feather"))
     assert list(Recording.from_file(written).signals.columns) == ["C3", "C4"]
+
+
+# --- EDF/BDF export: 16-character labels ---------------------------------------
+
+
+def test_edf_export_keeps_labels_distinct_after_truncation(tmp_path):
+    """Trigno labels that share their first 16 characters stay distinct in the file."""
+    labels = [f"Mini sensor 10: ACC.{axis} 10" for axis in "XYZ"] + ["C3"]
+    rec = TrignoImporter().load(_write_trigno(tmp_path / "acc.csv", labels, n_points=300))
+
+    with pytest.warns(UserWarning, match="not unique once truncated"):
+        rec.to_edf(str(tmp_path / "acc.edf"), format="edf", create_channels_tsv=False)
+
+    back = Recording.from_file(str(tmp_path / "acc.edf"), bids_channels="off")
+    assert list(back.channels) == ["Mini sensor 10-0", "Mini sensor 10-1", "Mini sensor 10-2", "C3"]
+    assert DEDUPLICATED_LABELS_KEY not in back.metadata  # nothing left to rename on import
+    for new, old in zip(back.channels, rec.channels, strict=True):
+        np.testing.assert_allclose(
+            back.signals[new].to_numpy(), rec.signals[old].to_numpy(), atol=0.05
+        )
