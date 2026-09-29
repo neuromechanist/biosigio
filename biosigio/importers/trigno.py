@@ -1,5 +1,6 @@
 import csv
 import logging
+from collections import Counter
 
 import pandas as pd
 
@@ -180,10 +181,14 @@ class TrignoImporter(BaseImporter):
         """
         header = next(csv.reader([header_line or ""]))
         if len(header) != len(df.columns):
+            counts = Counter(label for label, _ in entries)
+            repeated = sorted(label for label, n in counts.items() if n > 1)
             raise ValueError(
-                f"Trigno header in {filepath} has {len(header)} fields but the data "
-                f"section has {len(df.columns)} columns; repeated channel labels "
-                "cannot be matched to their columns"
+                f"Cannot import Trigno file {filepath}: its Label: lines repeat "
+                f"{', '.join(map(repr, repeated))}, so channels are matched to data "
+                f"columns by position, but the header line (the one with X[s]) has "
+                f"{len(header)} fields while the data section has {len(df.columns)} "
+                "columns. The header must be a single line with one field per data column."
             )
         cleaned = [field.replace("X[s]", "").strip('"') for field in header]
 
