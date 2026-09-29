@@ -12,9 +12,19 @@ def unique_channel_labels(labels: list[str]) -> list[str]:
     uses ``-`` as a placeholder for several unused inputs), but a Recording is
     keyed by label. Every occurrence of a repeated label gets a running suffix
     ``-0``, ``-1``, ...; a suffix that would collide with an existing label
-    falls through to ``-a``, ``-b``, ... This mirrors MNE's
-    ``_unique_channel_names`` exactly, so the names match a ``channels.tsv``
-    written by MNE-BIDS. Unique labels are returned unchanged.
+    falls through to ``-a``, ``-b``, ... Unique labels are returned unchanged.
+
+    For a single repeated stem this matches MNE's ``_unique_channel_names``
+    name for name, so the names match a ``channels.tsv`` written by MNE-BIDS.
+    With several repeated stems whose suffixed names interact (one stem's
+    candidate colliding with another stem's label or suffix), the result here
+    is deterministic, stems being processed in first-occurrence order, whereas
+    MNE iterates a ``set`` of stems, so its result can differ from this one
+    and from run to run.
+
+    Raises:
+        ValueError: If every candidate suffix (the running number, then
+            ``a``..``z``) for an occurrence collides with an existing label.
     """
     names = list(labels)
     dups = [name for name in dict.fromkeys(names) if names.count(name) > 1]
