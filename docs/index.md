@@ -20,7 +20,7 @@ biosigIO simplifies this process by providing a standardized interface for loadi
 ## Key Features
 
 - **Multi-system support**:
-  - EEGLAB set files (supported)
+  - EEGLAB set files (supported, classic and MATLAB v7.3; v7.3 needs the `hdf5` extra)
   - Delsys Trigno (supported)
   - OTB Systems (supported)
   - EDF/BDF(+) (supported, including annotations)

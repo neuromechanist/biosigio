@@ -50,7 +50,7 @@ biosigIO provides optional dependency groups. For an existing install use
 # Development tools (pytest, pytest-cov, ruff, ty)
 uv pip install "biosigio[dev]"
 
-# Documentation tools (mkdocs, mkdocs-material, mkdocstrings)
+# Documentation tools (mkdocs, mkdocs-material, mkdocstrings, mkdocs-jupyter, mike)
 uv pip install "biosigio[docs]"
 
 # MEG (.fif / CTF .ds / KIT .con,.sqd,.kdf / 4D-BTi) and BrainVision (.vhdr)
@@ -70,6 +70,10 @@ uv pip install "biosigio[neo]"
 
 # Sharded Zarr v3 serving store via zarr v3
 uv pip install "biosigio[zarr]"
+
+# MATLAB v7.3 (HDF5) EEGLAB .set files via h5py (classic .set files need
+# no extra)
+uv pip install "biosigio[hdf5]"
 
 # All optional dependencies
 uv pip install "biosigio[all]"
@@ -113,4 +117,4 @@ import biosigio
 print(biosigio.__version__)
 ```
 
-You should see the version number (e.g., `1.0.1` or later) without any errors.
+You should see the version number (e.g., `1.2.9`) without any errors.

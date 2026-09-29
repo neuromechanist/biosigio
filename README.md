@@ -16,7 +16,7 @@ The documentation including installation instructions, examples, and API referen
 ## Features
 
 - Import biosignal recordings from many systems and archives:
-  - EEGLAB set files (supported)
+  - EEGLAB set files (supported, classic and MATLAB v7.3; v7.3 needs the `hdf5` extra)
   - Delsys Trigno (supported)
   - OTB Systems (supported)
   - EDF/BDF(+) (supported, including annotations)
