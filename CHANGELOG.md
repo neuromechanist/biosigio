@@ -19,6 +19,8 @@ The breaking changes concern repeated channel labels
 (in a file, in a `select_channels` call, or produced by EDF/BDF's 16-character label field)
 and `channels.tsv` names that differ from the data file's only in case;
 data without either imports and exports as in 1.2.9.
+To adapt, de-duplicate names passed to `select_channels` and re-check any store regenerated from a file with repeated labels;
+to defer, pin `biosigio==1.2.9`, since a `~=1.2.9` or `<1.3` pin takes 1.2.10 automatically.
 
 ### Breaking
 
