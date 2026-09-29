@@ -791,11 +791,10 @@ def test_an_unrecognised_type_does_not_cost_the_row_its_unit(ieeg_in_volts, tmp_
 def test_a_duplicated_edf_label_is_converted_on_every_entry(tmp_path):
     """Two channels under one name must not end up in different units.
 
-    EDF permits a repeated label, and a streaming source lists both entries
-    while a Recording (whose channels are a dict) keeps one -- so this is the one
-    case the two paths cannot be compared store to store, and the guarantee is
-    internal to the store instead: every entry sharing a label gets the same
-    decision, so no store can serve two units for one name.
+    EDF permits a repeated label. The streaming source suffixes repeats the way
+    MNE (and the in-memory importer) does, ``EEG1-0`` and ``EEG1-1``, so both
+    entries survive under distinct names and match the rows an MNE-BIDS
+    ``channels.tsv`` writes for them; each then gets its row's decision.
     """
     import pyedflib
 
@@ -826,23 +825,23 @@ def test_a_duplicated_edf_label_is_converted_on_every_entry(tmp_path):
     finally:
         writer.close()
 
-    write_channels_tsv(tmp_path, "sub-01_task-rest", [("EEG1", "SEEG", "mV")])
+    write_channels_tsv(
+        tmp_path, "sub-01_task-rest", [("EEG1-0", "SEEG", "mV"), ("EEG1-1", "SEEG", "mV")]
+    )
 
     store = stream_to_zarr(
         str(path), str(tmp_path / "dup.zarr"), force_modality="IEEG", dtype="int16"
     )
     channels = zarr.open_group(store, mode="r")["ieeg_100hz"].attrs["channels"]
 
-    assert [c["label"] for c in channels] == ["EEG1", "EEG1"]
+    assert [c["label"] for c in channels] == ["EEG1-0", "EEG1-1"]
     assert {c["unit"] for c in channels} == {"mV"}
     assert {c["channel_type"] for c in channels} == {"SEEG"}
-    # uV -> mV is 1e-3, applied to each row independently. Read by row rather
-    # than through `dequantized`, whose label-keyed dict cannot hold both.
+    # uV -> mV is 1e-3, applied to each row independently.
     level0 = np.asarray(zarr.open_group(store, mode="r")["ieeg_100hz"]["0"][:])
     for i, channel in enumerate(channels):
         physical = level0[i] * channel["scale"] + channel["offset"]
         assert np.max(np.abs(physical - data[i] * 1e-3)) <= 6 * channel["scale"]
 
-    # One row per entry, so the report counts the sidecar's row twice.
     report = dict(zarr.open_group(store, mode="r").attrs)["channels_tsv_units"]
     assert report["converted"] == 2
