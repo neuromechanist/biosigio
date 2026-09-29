@@ -2643,7 +2643,7 @@
 
 
 <h1 id="eeglab-examples">EEGLAB Examples<a class="headerlink" href="#eeglab-examples" title="Permanent link">&para;</a></h1>
-<p>This page provides examples for working with EEGLAB <code>.set</code> files using biosigIO. The importer reads <code>.set</code> files with <code>scipy.io.loadmat</code>, so only pre-v7.3 (non-HDF5) MATLAB <code>.set</code> files are supported; v7.3/HDF5 <code>.set</code> files are not.</p>
+<p>This page provides examples for working with EEGLAB <code>.set</code> files using biosigIO. Classic (v5/v7) MATLAB <code>.set</code> files are read with <code>scipy.io.loadmat</code>; MATLAB v7.3 (HDF5) <code>.set</code> files are read with h5py and need the <code>hdf5</code> extra (<code>uv sync --extra hdf5</code>). See the <a href="../../formats/eeglab/">EEGLAB format page</a> for details.</p>
 <h2 id="basic-eeglab-example">Basic EEGLAB Example<a class="headerlink" href="#basic-eeglab-example" title="Permanent link">&para;</a></h2>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="kn">import</span><span class="w"> </span><span class="nn">os</span>
 <a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">biosigio</span><span class="w"> </span><span class="kn">import</span> <span class="n">Recording</span>

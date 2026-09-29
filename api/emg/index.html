@@ -1248,6 +1248,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#biosigio.core.emg.Recording.set_channel" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        set_channel
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#biosigio.core.emg.Recording.add_event" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2967,6 +2978,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#biosigio.core.emg.Recording.set_channel" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        set_channel
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#biosigio.core.emg.Recording.add_event" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3469,6 +3491,44 @@ imported from any supported format.</p>
     modality: Coarse modality ('EEG', 'EMG', 'IEEG', 'MEG', 'BEH', 'MISC').
         If None, it is inferred from <code>channel_type</code>.
     prefilter: Pre-filtering applied to the channel (keyword-only).</p>
+<p>Raises:
+    ValueError: If a channel with <code>label</code> already exists; channels are
+        keyed by label, so adding it again would silently replace one.
+        This used to overwrite the existing channel. <code>set_channel</code>
+        updates an existing channel's metadata only and cannot replace
+        its samples, and Recording has no remove-channel method; to
+        replace the samples, assign <code>rec.signals[label] = new_data</code>
+        (same length as the recording), or add the new data under a
+        different label.</p>
+
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
+<h3 id="biosigio.core.emg.Recording.set_channel" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">set_channel</span><span class="p">(</span><span class="n">label</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">channel_type</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">modality</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">physical_dimension</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">prefilter</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span></code>
+
+<a href="#biosigio.core.emg.Recording.set_channel" class="headerlink" title="Permanent link">&para;</a></h3>
+
+
+    <div class="doc doc-contents ">
+
+        <p>Update metadata of an existing channel (the supported relabel path).</p>
+<p>Args:
+    label: Existing channel label.
+    channel_type: New BIDS channel type (validated). When given without an
+        explicit <code>modality</code>, the modality is re-derived from it.
+    modality: New coarse modality (validated).
+    physical_dimension: New physical unit.
+    prefilter: New prefilter string.</p>
+<p>Raises:
+    KeyError: If <code>label</code> is not an existing channel.
+    ValueError: If <code>channel_type</code> or <code>modality</code> is not in the
+        modality vocabulary.</p>
 
 
     </div>
@@ -3723,7 +3783,7 @@ emg_subset = rec.select_channels(['EMG1', 'ACC1'], channel_type='EMG')
 <h3 id="data-loading">Data Loading<a class="headerlink" href="#data-loading" title="Permanent link">&para;</a></h3>
 <ul>
 <li><code>from_file()</code>: Load biosignal data from a file (class method)</li>
-<li><code>add_channel()</code>: Append a channel (data + metadata) to a Recording</li>
+<li><code>add_channel()</code>: Append a channel (data + metadata) to a Recording. Labels are unique: adding a label that already exists raises <code>ValueError</code></li>
 </ul>
 <h3 id="data-access">Data Access<a class="headerlink" href="#data-access" title="Permanent link">&para;</a></h3>
 <ul>
@@ -3737,6 +3797,7 @@ emg_subset = rec.select_channels(['EMG1', 'ACC1'], channel_type='EMG')
 <h3 id="data-manipulation">Data Manipulation<a class="headerlink" href="#data-manipulation" title="Permanent link">&para;</a></h3>
 <ul>
 <li><code>select_channels()</code>: Create a new Recording object with selected channels</li>
+<li><code>set_channel()</code>: Update an existing channel's metadata (type, modality, unit, prefilter); it does not touch the samples</li>
 <li><code>set_metadata()</code>: Set a single metadata field</li>
 <li><code>get_metadata()</code>: Get a single metadata field</li>
 <li><code>has_metadata()</code>: Check if a metadata field exists</li>
@@ -3748,6 +3809,8 @@ emg_subset = rec.select_channels(['EMG1', 'ACC1'], channel_type='EMG')
 <h3 id="export">Export<a class="headerlink" href="#export" title="Permanent link">&para;</a></h3>
 <ul>
 <li><code>to_edf()</code>: Export data to EDF/BDF format with optional verification</li>
+<li><code>to_parquet()</code>, <code>to_arrow()</code>: Lossless columnar export (<code>arrow</code> extra)</li>
+<li><code>to_zarr()</code>: Zarr serving store (<code>zarr</code> extra)</li>
 </ul>
 <h2 id="usage-examples">Usage Examples<a class="headerlink" href="#usage-examples" title="Permanent link">&para;</a></h2>
 <h3 id="loading-data">Loading Data<a class="headerlink" href="#loading-data" title="Permanent link">&para;</a></h3>
@@ -3784,78 +3847,95 @@ emg_subset = rec.select_channels(['EMG1', 'ACC1'], channel_type='EMG')
 <a id="__codelineno-1-18" name="__codelineno-1-18" href="#__codelineno-1-18"></a>    <span class="n">channel_type</span><span class="o">=</span><span class="s1">'EMG'</span><span class="p">,</span>
 <a id="__codelineno-1-19" name="__codelineno-1-19" href="#__codelineno-1-19"></a><span class="p">)</span>
 </code></pre></div>
-<h3 id="selecting-channels">Selecting Channels<a class="headerlink" href="#selecting-channels" title="Permanent link">&para;</a></h3>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="c1"># Select by channel names</span>
-<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="n">subset</span> <span class="o">=</span> <span class="n">rec</span><span class="o">.</span><span class="n">select_channels</span><span class="p">([</span><span class="s1">'EMG1'</span><span class="p">,</span> <span class="s1">'EMG2'</span><span class="p">])</span>
+<div class="admonition warning">
+<p class="admonition-title">Breaking change in 1.2.9</p>
+<p><code>add_channel</code> now raises <code>ValueError</code> when the label already exists.
+Before 1.2.9 it silently replaced that channel.
+Code that relied on the overwrite should call <code>set_channel</code> for metadata
+or assign <code>rec.signals[label]</code> for samples, as shown below.</p>
+</div>
+<p>Channel labels are unique. Calling <code>add_channel</code> with a label the Recording
+already has raises <code>ValueError</code> rather than replacing the existing channel
+(before 1.2.9 it silently overwrote it). To change a channel's metadata, use
+<code>set_channel</code>; to replace its samples, assign the column directly:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="c1"># Update metadata only (the samples are unchanged)</span>
+<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="n">rec</span><span class="o">.</span><span class="n">set_channel</span><span class="p">(</span><span class="s1">'EMG1'</span><span class="p">,</span> <span class="n">physical_dimension</span><span class="o">=</span><span class="s1">'mV'</span><span class="p">)</span>
 <a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>
-<a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a><span class="c1"># Select by channel type</span>
-<a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a><span class="n">emg_only</span> <span class="o">=</span> <span class="n">rec</span><span class="o">.</span><span class="n">select_channels</span><span class="p">(</span><span class="n">channel_type</span><span class="o">=</span><span class="s1">'EMG'</span><span class="p">)</span>
+<a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a><span class="c1"># Replace the samples (same length as the recording)</span>
+<a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a><span class="n">rec</span><span class="o">.</span><span class="n">signals</span><span class="p">[</span><span class="s1">'EMG1'</span><span class="p">]</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="mf">0.5</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">,</span> <span class="mf">1.5</span><span class="p">,</span> <span class="mf">2.0</span><span class="p">,</span> <span class="mf">2.5</span><span class="p">])</span>
+</code></pre></div>
+<h3 id="selecting-channels">Selecting Channels<a class="headerlink" href="#selecting-channels" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="c1"># Select by channel names</span>
+<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="n">subset</span> <span class="o">=</span> <span class="n">rec</span><span class="o">.</span><span class="n">select_channels</span><span class="p">([</span><span class="s1">'EMG1'</span><span class="p">,</span> <span class="s1">'EMG2'</span><span class="p">])</span>
+<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a>
+<a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a><span class="c1"># Select by channel type</span>
+<a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a><span class="n">emg_only</span> <span class="o">=</span> <span class="n">rec</span><span class="o">.</span><span class="n">select_channels</span><span class="p">(</span><span class="n">channel_type</span><span class="o">=</span><span class="s1">'EMG'</span><span class="p">)</span>
 </code></pre></div>
 <h3 id="metadata-handling">Metadata Handling<a class="headerlink" href="#metadata-handling" title="Permanent link">&para;</a></h3>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="c1"># Set metadata</span>
-<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="n">rec</span><span class="o">.</span><span class="n">set_metadata</span><span class="p">(</span><span class="s1">'subject'</span><span class="p">,</span> <span class="s1">'S001'</span><span class="p">)</span>
-<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a>
-<a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a><span class="c1"># Get metadata</span>
-<a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a><span class="n">subject</span> <span class="o">=</span> <span class="n">rec</span><span class="o">.</span><span class="n">get_metadata</span><span class="p">(</span><span class="s1">'subject'</span><span class="p">)</span>
-<a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a>
-<a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a><span class="c1"># Check if metadata exists</span>
-<a id="__codelineno-3-8" name="__codelineno-3-8" href="#__codelineno-3-8"></a><span class="k">if</span> <span class="n">rec</span><span class="o">.</span><span class="n">has_metadata</span><span class="p">(</span><span class="s1">'condition'</span><span class="p">):</span>
-<a id="__codelineno-3-9" name="__codelineno-3-9" href="#__codelineno-3-9"></a>    <span class="n">condition</span> <span class="o">=</span> <span class="n">rec</span><span class="o">.</span><span class="n">get_metadata</span><span class="p">(</span><span class="s1">'condition'</span><span class="p">)</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="c1"># Set metadata</span>
+<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="n">rec</span><span class="o">.</span><span class="n">set_metadata</span><span class="p">(</span><span class="s1">'subject'</span><span class="p">,</span> <span class="s1">'S001'</span><span class="p">)</span>
+<a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a>
+<a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a><span class="c1"># Get metadata</span>
+<a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a><span class="n">subject</span> <span class="o">=</span> <span class="n">rec</span><span class="o">.</span><span class="n">get_metadata</span><span class="p">(</span><span class="s1">'subject'</span><span class="p">)</span>
+<a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a>
+<a id="__codelineno-4-7" name="__codelineno-4-7" href="#__codelineno-4-7"></a><span class="c1"># Check if metadata exists</span>
+<a id="__codelineno-4-8" name="__codelineno-4-8" href="#__codelineno-4-8"></a><span class="k">if</span> <span class="n">rec</span><span class="o">.</span><span class="n">has_metadata</span><span class="p">(</span><span class="s1">'condition'</span><span class="p">):</span>
+<a id="__codelineno-4-9" name="__codelineno-4-9" href="#__codelineno-4-9"></a>    <span class="n">condition</span> <span class="o">=</span> <span class="n">rec</span><span class="o">.</span><span class="n">get_metadata</span><span class="p">(</span><span class="s1">'condition'</span><span class="p">)</span>
 </code></pre></div>
 <h3 id="plotting">Plotting<a class="headerlink" href="#plotting" title="Permanent link">&para;</a></h3>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="c1"># Plot all channels</span>
-<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="n">rec</span><span class="o">.</span><span class="n">plot_signals</span><span class="p">()</span>
-<a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a>
-<a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a><span class="c1"># Plot specific channels with time range</span>
-<a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a><span class="n">rec</span><span class="o">.</span><span class="n">plot_signals</span><span class="p">([</span><span class="s1">'EMG1'</span><span class="p">,</span> <span class="s1">'EMG2'</span><span class="p">],</span> <span class="n">time_range</span><span class="o">=</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">5</span><span class="p">))</span>
-<a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a>
-<a id="__codelineno-4-7" name="__codelineno-4-7" href="#__codelineno-4-7"></a><span class="c1"># Customize plot</span>
-<a id="__codelineno-4-8" name="__codelineno-4-8" href="#__codelineno-4-8"></a><span class="n">rec</span><span class="o">.</span><span class="n">plot_signals</span><span class="p">(</span>
-<a id="__codelineno-4-9" name="__codelineno-4-9" href="#__codelineno-4-9"></a>    <span class="n">channels</span><span class="o">=</span><span class="p">[</span><span class="s1">'EMG1'</span><span class="p">,</span> <span class="s1">'EMG2'</span><span class="p">],</span>
-<a id="__codelineno-4-10" name="__codelineno-4-10" href="#__codelineno-4-10"></a>    <span class="n">time_range</span><span class="o">=</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">5</span><span class="p">),</span>
-<a id="__codelineno-4-11" name="__codelineno-4-11" href="#__codelineno-4-11"></a>    <span class="n">title</span><span class="o">=</span><span class="s1">'EMG Signals'</span><span class="p">,</span>
-<a id="__codelineno-4-12" name="__codelineno-4-12" href="#__codelineno-4-12"></a>    <span class="n">grid</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
-<a id="__codelineno-4-13" name="__codelineno-4-13" href="#__codelineno-4-13"></a>    <span class="n">detrend</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
-<a id="__codelineno-4-14" name="__codelineno-4-14" href="#__codelineno-4-14"></a>    <span class="n">offset_scale</span><span class="o">=</span><span class="mf">0.8</span>
-<a id="__codelineno-4-15" name="__codelineno-4-15" href="#__codelineno-4-15"></a><span class="p">)</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="c1"># Plot all channels</span>
+<a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a><span class="n">rec</span><span class="o">.</span><span class="n">plot_signals</span><span class="p">()</span>
+<a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a>
+<a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a><span class="c1"># Plot specific channels with time range</span>
+<a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a><span class="n">rec</span><span class="o">.</span><span class="n">plot_signals</span><span class="p">([</span><span class="s1">'EMG1'</span><span class="p">,</span> <span class="s1">'EMG2'</span><span class="p">],</span> <span class="n">time_range</span><span class="o">=</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">5</span><span class="p">))</span>
+<a id="__codelineno-5-6" name="__codelineno-5-6" href="#__codelineno-5-6"></a>
+<a id="__codelineno-5-7" name="__codelineno-5-7" href="#__codelineno-5-7"></a><span class="c1"># Customize plot</span>
+<a id="__codelineno-5-8" name="__codelineno-5-8" href="#__codelineno-5-8"></a><span class="n">rec</span><span class="o">.</span><span class="n">plot_signals</span><span class="p">(</span>
+<a id="__codelineno-5-9" name="__codelineno-5-9" href="#__codelineno-5-9"></a>    <span class="n">channels</span><span class="o">=</span><span class="p">[</span><span class="s1">'EMG1'</span><span class="p">,</span> <span class="s1">'EMG2'</span><span class="p">],</span>
+<a id="__codelineno-5-10" name="__codelineno-5-10" href="#__codelineno-5-10"></a>    <span class="n">time_range</span><span class="o">=</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">5</span><span class="p">),</span>
+<a id="__codelineno-5-11" name="__codelineno-5-11" href="#__codelineno-5-11"></a>    <span class="n">title</span><span class="o">=</span><span class="s1">'EMG Signals'</span><span class="p">,</span>
+<a id="__codelineno-5-12" name="__codelineno-5-12" href="#__codelineno-5-12"></a>    <span class="n">grid</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+<a id="__codelineno-5-13" name="__codelineno-5-13" href="#__codelineno-5-13"></a>    <span class="n">detrend</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+<a id="__codelineno-5-14" name="__codelineno-5-14" href="#__codelineno-5-14"></a>    <span class="n">offset_scale</span><span class="o">=</span><span class="mf">0.8</span>
+<a id="__codelineno-5-15" name="__codelineno-5-15" href="#__codelineno-5-15"></a><span class="p">)</span>
 </code></pre></div>
 <h3 id="verification">Verification<a class="headerlink" href="#verification" title="Permanent link">&para;</a></h3>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">biosigio.analysis.verification</span><span class="w"> </span><span class="kn">import</span> <span class="n">compare_signals</span><span class="p">,</span> <span class="n">report_verification_results</span>
-<a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">biosigio.visualization.static</span><span class="w"> </span><span class="kn">import</span> <span class="n">plot_comparison</span>
-<a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a><span class="kn">import</span><span class="w"> </span><span class="nn">matplotlib.pyplot</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">plt</span>
-<a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a>
-<a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a><span class="c1"># Export with built-in verification</span>
-<a id="__codelineno-5-6" name="__codelineno-5-6" href="#__codelineno-5-6"></a><span class="n">rec_original</span><span class="o">.</span><span class="n">to_edf</span><span class="p">(</span><span class="s1">'output'</span><span class="p">,</span> <span class="n">verify</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">verify_tolerance</span><span class="o">=</span><span class="mf">0.001</span><span class="p">)</span>
-<a id="__codelineno-5-7" name="__codelineno-5-7" href="#__codelineno-5-7"></a>
-<a id="__codelineno-5-8" name="__codelineno-5-8" href="#__codelineno-5-8"></a><span class="c1"># Export and verify with custom channel mapping</span>
-<a id="__codelineno-5-9" name="__codelineno-5-9" href="#__codelineno-5-9"></a><span class="n">channel_map</span> <span class="o">=</span> <span class="p">{</span><span class="s1">'EMG1'</span><span class="p">:</span> <span class="s1">'CH1'</span><span class="p">,</span> <span class="s1">'EMG2'</span><span class="p">:</span> <span class="s1">'CH2'</span><span class="p">}</span>
-<a id="__codelineno-5-10" name="__codelineno-5-10" href="#__codelineno-5-10"></a><span class="n">rec_original</span><span class="o">.</span><span class="n">to_edf</span><span class="p">(</span><span class="s1">'output'</span><span class="p">,</span> <span class="n">verify</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">verify_channel_map</span><span class="o">=</span><span class="n">channel_map</span><span class="p">)</span>
-<a id="__codelineno-5-11" name="__codelineno-5-11" href="#__codelineno-5-11"></a>
-<a id="__codelineno-5-12" name="__codelineno-5-12" href="#__codelineno-5-12"></a><span class="c1"># Export, verify, and generate verification plot</span>
-<a id="__codelineno-5-13" name="__codelineno-5-13" href="#__codelineno-5-13"></a><span class="n">rec_original</span><span class="o">.</span><span class="n">to_edf</span><span class="p">(</span><span class="s1">'output'</span><span class="p">,</span> <span class="n">verify</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">verify_plot</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
-<a id="__codelineno-5-14" name="__codelineno-5-14" href="#__codelineno-5-14"></a>
-<a id="__codelineno-5-15" name="__codelineno-5-15" href="#__codelineno-5-15"></a><span class="c1"># Manual verification (alternative approach). With the default format='auto',</span>
-<a id="__codelineno-5-16" name="__codelineno-5-16" href="#__codelineno-5-16"></a><span class="c1"># to_edf may write either output.edf or output.bdf; reload the path it wrote.</span>
-<a id="__codelineno-5-17" name="__codelineno-5-17" href="#__codelineno-5-17"></a><span class="n">rec_original</span><span class="o">.</span><span class="n">to_edf</span><span class="p">(</span><span class="s1">'output'</span><span class="p">)</span>
-<a id="__codelineno-5-18" name="__codelineno-5-18" href="#__codelineno-5-18"></a><span class="n">rec_reloaded</span> <span class="o">=</span> <span class="n">Recording</span><span class="o">.</span><span class="n">from_file</span><span class="p">(</span><span class="s1">'output.edf'</span><span class="p">)</span>  <span class="c1"># or 'output.bdf' if BDF was selected</span>
-<a id="__codelineno-5-19" name="__codelineno-5-19" href="#__codelineno-5-19"></a>
-<a id="__codelineno-5-20" name="__codelineno-5-20" href="#__codelineno-5-20"></a><span class="c1"># Compare signals</span>
-<a id="__codelineno-5-21" name="__codelineno-5-21" href="#__codelineno-5-21"></a><span class="n">results</span> <span class="o">=</span> <span class="n">compare_signals</span><span class="p">(</span><span class="n">rec_original</span><span class="p">,</span> <span class="n">rec_reloaded</span><span class="p">,</span> <span class="n">tolerance</span><span class="o">=</span><span class="mf">0.001</span><span class="p">)</span>
-<a id="__codelineno-5-22" name="__codelineno-5-22" href="#__codelineno-5-22"></a><span class="n">is_identical</span> <span class="o">=</span> <span class="n">report_verification_results</span><span class="p">(</span><span class="n">results</span><span class="p">,</span> <span class="n">verify_tolerance</span><span class="o">=</span><span class="mf">0.001</span><span class="p">)</span>
-<a id="__codelineno-5-23" name="__codelineno-5-23" href="#__codelineno-5-23"></a>
-<a id="__codelineno-5-24" name="__codelineno-5-24" href="#__codelineno-5-24"></a><span class="c1"># Plot comparison for visual verification</span>
-<a id="__codelineno-5-25" name="__codelineno-5-25" href="#__codelineno-5-25"></a><span class="n">plot_comparison</span><span class="p">(</span><span class="n">rec_original</span><span class="p">,</span> <span class="n">rec_reloaded</span><span class="p">,</span> <span class="n">channels</span><span class="o">=</span><span class="p">[</span><span class="s1">'EMG1'</span><span class="p">,</span> <span class="s1">'EMG2'</span><span class="p">])</span>
-<a id="__codelineno-5-26" name="__codelineno-5-26" href="#__codelineno-5-26"></a><span class="n">plt</span><span class="o">.</span><span class="n">show</span><span class="p">()</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">biosigio.analysis.verification</span><span class="w"> </span><span class="kn">import</span> <span class="n">compare_signals</span><span class="p">,</span> <span class="n">report_verification_results</span>
+<a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">biosigio.visualization.static</span><span class="w"> </span><span class="kn">import</span> <span class="n">plot_comparison</span>
+<a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a><span class="kn">import</span><span class="w"> </span><span class="nn">matplotlib.pyplot</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">plt</span>
+<a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a>
+<a id="__codelineno-6-5" name="__codelineno-6-5" href="#__codelineno-6-5"></a><span class="c1"># Export with built-in verification</span>
+<a id="__codelineno-6-6" name="__codelineno-6-6" href="#__codelineno-6-6"></a><span class="n">rec_original</span><span class="o">.</span><span class="n">to_edf</span><span class="p">(</span><span class="s1">'output'</span><span class="p">,</span> <span class="n">verify</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">verify_tolerance</span><span class="o">=</span><span class="mf">0.001</span><span class="p">)</span>
+<a id="__codelineno-6-7" name="__codelineno-6-7" href="#__codelineno-6-7"></a>
+<a id="__codelineno-6-8" name="__codelineno-6-8" href="#__codelineno-6-8"></a><span class="c1"># Export and verify with custom channel mapping</span>
+<a id="__codelineno-6-9" name="__codelineno-6-9" href="#__codelineno-6-9"></a><span class="n">channel_map</span> <span class="o">=</span> <span class="p">{</span><span class="s1">'EMG1'</span><span class="p">:</span> <span class="s1">'CH1'</span><span class="p">,</span> <span class="s1">'EMG2'</span><span class="p">:</span> <span class="s1">'CH2'</span><span class="p">}</span>
+<a id="__codelineno-6-10" name="__codelineno-6-10" href="#__codelineno-6-10"></a><span class="n">rec_original</span><span class="o">.</span><span class="n">to_edf</span><span class="p">(</span><span class="s1">'output'</span><span class="p">,</span> <span class="n">verify</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">verify_channel_map</span><span class="o">=</span><span class="n">channel_map</span><span class="p">)</span>
+<a id="__codelineno-6-11" name="__codelineno-6-11" href="#__codelineno-6-11"></a>
+<a id="__codelineno-6-12" name="__codelineno-6-12" href="#__codelineno-6-12"></a><span class="c1"># Export, verify, and generate verification plot</span>
+<a id="__codelineno-6-13" name="__codelineno-6-13" href="#__codelineno-6-13"></a><span class="n">rec_original</span><span class="o">.</span><span class="n">to_edf</span><span class="p">(</span><span class="s1">'output'</span><span class="p">,</span> <span class="n">verify</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">verify_plot</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<a id="__codelineno-6-14" name="__codelineno-6-14" href="#__codelineno-6-14"></a>
+<a id="__codelineno-6-15" name="__codelineno-6-15" href="#__codelineno-6-15"></a><span class="c1"># Manual verification (alternative approach). With the default format='auto',</span>
+<a id="__codelineno-6-16" name="__codelineno-6-16" href="#__codelineno-6-16"></a><span class="c1"># to_edf may write either output.edf or output.bdf; reload the path it wrote.</span>
+<a id="__codelineno-6-17" name="__codelineno-6-17" href="#__codelineno-6-17"></a><span class="n">rec_original</span><span class="o">.</span><span class="n">to_edf</span><span class="p">(</span><span class="s1">'output'</span><span class="p">)</span>
+<a id="__codelineno-6-18" name="__codelineno-6-18" href="#__codelineno-6-18"></a><span class="n">rec_reloaded</span> <span class="o">=</span> <span class="n">Recording</span><span class="o">.</span><span class="n">from_file</span><span class="p">(</span><span class="s1">'output.edf'</span><span class="p">)</span>  <span class="c1"># or 'output.bdf' if BDF was selected</span>
+<a id="__codelineno-6-19" name="__codelineno-6-19" href="#__codelineno-6-19"></a>
+<a id="__codelineno-6-20" name="__codelineno-6-20" href="#__codelineno-6-20"></a><span class="c1"># Compare signals</span>
+<a id="__codelineno-6-21" name="__codelineno-6-21" href="#__codelineno-6-21"></a><span class="n">results</span> <span class="o">=</span> <span class="n">compare_signals</span><span class="p">(</span><span class="n">rec_original</span><span class="p">,</span> <span class="n">rec_reloaded</span><span class="p">,</span> <span class="n">tolerance</span><span class="o">=</span><span class="mf">0.001</span><span class="p">)</span>
+<a id="__codelineno-6-22" name="__codelineno-6-22" href="#__codelineno-6-22"></a><span class="n">is_identical</span> <span class="o">=</span> <span class="n">report_verification_results</span><span class="p">(</span><span class="n">results</span><span class="p">,</span> <span class="n">verify_tolerance</span><span class="o">=</span><span class="mf">0.001</span><span class="p">)</span>
+<a id="__codelineno-6-23" name="__codelineno-6-23" href="#__codelineno-6-23"></a>
+<a id="__codelineno-6-24" name="__codelineno-6-24" href="#__codelineno-6-24"></a><span class="c1"># Plot comparison for visual verification</span>
+<a id="__codelineno-6-25" name="__codelineno-6-25" href="#__codelineno-6-25"></a><span class="n">plot_comparison</span><span class="p">(</span><span class="n">rec_original</span><span class="p">,</span> <span class="n">rec_reloaded</span><span class="p">,</span> <span class="n">channels</span><span class="o">=</span><span class="p">[</span><span class="s1">'EMG1'</span><span class="p">,</span> <span class="s1">'EMG2'</span><span class="p">])</span>
+<a id="__codelineno-6-26" name="__codelineno-6-26" href="#__codelineno-6-26"></a><span class="n">plt</span><span class="o">.</span><span class="n">show</span><span class="p">()</span>
 </code></pre></div>
 <h3 id="exporting">Exporting<a class="headerlink" href="#exporting" title="Permanent link">&para;</a></h3>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="c1"># Export with automatic format selection</span>
-<a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a><span class="n">rec</span><span class="o">.</span><span class="n">to_edf</span><span class="p">(</span><span class="s1">'output'</span><span class="p">)</span>
-<a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a>
-<a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a><span class="c1"># Force EDF format</span>
-<a id="__codelineno-6-5" name="__codelineno-6-5" href="#__codelineno-6-5"></a><span class="n">rec</span><span class="o">.</span><span class="n">to_edf</span><span class="p">(</span><span class="s1">'output'</span><span class="p">,</span> <span class="nb">format</span><span class="o">=</span><span class="s1">'edf'</span><span class="p">)</span>
-<a id="__codelineno-6-6" name="__codelineno-6-6" href="#__codelineno-6-6"></a>
-<a id="__codelineno-6-7" name="__codelineno-6-7" href="#__codelineno-6-7"></a><span class="c1"># Control format selection method</span>
-<a id="__codelineno-6-8" name="__codelineno-6-8" href="#__codelineno-6-8"></a><span class="n">rec</span><span class="o">.</span><span class="n">to_edf</span><span class="p">(</span><span class="s1">'output'</span><span class="p">,</span> <span class="n">method</span><span class="o">=</span><span class="s1">'svd'</span><span class="p">)</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="c1"># Export with automatic format selection</span>
+<a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a><span class="n">rec</span><span class="o">.</span><span class="n">to_edf</span><span class="p">(</span><span class="s1">'output'</span><span class="p">)</span>
+<a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a>
+<a id="__codelineno-7-4" name="__codelineno-7-4" href="#__codelineno-7-4"></a><span class="c1"># Force EDF format</span>
+<a id="__codelineno-7-5" name="__codelineno-7-5" href="#__codelineno-7-5"></a><span class="n">rec</span><span class="o">.</span><span class="n">to_edf</span><span class="p">(</span><span class="s1">'output'</span><span class="p">,</span> <span class="nb">format</span><span class="o">=</span><span class="s1">'edf'</span><span class="p">)</span>
+<a id="__codelineno-7-6" name="__codelineno-7-6" href="#__codelineno-7-6"></a>
+<a id="__codelineno-7-7" name="__codelineno-7-7" href="#__codelineno-7-7"></a><span class="c1"># Control format selection method</span>
+<a id="__codelineno-7-8" name="__codelineno-7-8" href="#__codelineno-7-8"></a><span class="n">rec</span><span class="o">.</span><span class="n">to_edf</span><span class="p">(</span><span class="s1">'output'</span><span class="p">,</span> <span class="n">method</span><span class="o">=</span><span class="s1">'svd'</span><span class="p">)</span>
 </code></pre></div>
 
 

@@ -920,6 +920,23 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="File Structure">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#renamed-files-and-stale-header-references" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Renamed files and stale header references
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
       
         <li class="md-nav__item">
@@ -2609,6 +2626,23 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="File Structure">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#renamed-files-and-stale-header-references" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Renamed files and stale header references
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
       
         <li class="md-nav__item">
@@ -2701,7 +2735,13 @@
 <li><strong>Marker File (<code>.vmrk</code>):</strong> A text file listing time-stamped markers (events) such as stimulus and response triggers, segment boundaries, and recording-control notes.</li>
 <li><strong>Binary Data File (<code>.eeg</code> or <code>.dat</code>):</strong> The actual signal samples in binary form, as specified in the header.</li>
 </ul>
-<p>You always pass the <strong>header (<code>.vhdr</code>) file</strong> to biosigIO. MNE-Python resolves the sibling <code>.vmrk</code> and <code>.eeg</code>/<code>.dat</code> files automatically from the paths recorded in the header, so the three files must stay together in the same directory.</p>
+<p>You always pass the <strong>header (<code>.vhdr</code>) file</strong> to biosigIO. MNE-Python resolves the sibling <code>.vmrk</code> and <code>.eeg</code>/<code>.dat</code> files from the <code>DataFile=</code> and <code>MarkerFile=</code> entries recorded in the header, so the three files must stay together in the same directory.</p>
+<h3 id="renamed-files-and-stale-header-references">Renamed files and stale header references<a class="headerlink" href="#renamed-files-and-stale-header-references" title="Permanent link">&para;</a></h3>
+<p>Renaming a BrainVision triplet (as BIDS conversion does) changes the file names on disk but not the <code>DataFile=</code>/<code>MarkerFile=</code> entries inside the header, so the header can name a <code>.eeg</code> or <code>.vmrk</code> that no longer exists. When a referenced file is missing and a sibling with the header's own stem exists (<code>&lt;stem&gt;.eeg</code>, then <code>&lt;stem&gt;.dat</code>, for the data; <code>&lt;stem&gt;.vmrk</code> for the markers), biosigIO reads a patched temporary copy of the header that points at the sibling. Every file a non-empty <code>DataFile=</code> or <code>MarkerFile=</code> entry of its <code>[Common Infos]</code> section resolves to (not only the stale one) is staged beside the copy under a fixed ASCII name, <code>data&lt;ext&gt;</code> or <code>marker.vmrk</code> (a symbolic link where the host allows one, else a hard link, else a byte copy), and the copy names it by that name. The copy therefore never has to spell the dataset's own directory, which may hold characters the header's codepage cannot encode (a Greek or CJK name under a cp1252 header, or bytes that are not valid UTF-8); the rest of the header, its encoding, its <code>Codepage=</code> entry and its line endings are kept. The dataset's own files are never modified. The streaming Zarr export (<code>stream_to_zarr</code>) uses the same resolution and keeps the staged files until the source is closed, since MNE reads the data file lazily.</p>
+<p>A sibling is matched by exact name first, then with only the extension's case ignored (<code>&lt;stem&gt;.EEG</code> or <code>&lt;stem&gt;.VMRK</code> on a case-sensitive filesystem), but only when exactly one file matches; two files whose extensions differ only in case are never guessed between. The stem itself must be the header's own: it is compared exactly, except that the same text in a different Unicode normalization (an NFD <code>é</code> against an NFC one) is accepted, so <code>SUB-01.eeg</code> is never read as the data of <code>sub-01.vhdr</code>. MNE picks its marker reader by the exact <code>.vmrk</code> suffix, which the staged name <code>marker.vmrk</code> always has.</p>
+<p>A successful recovery is logged at info level and recorded in the recording's metadata under <code>brainvision_header_recovered</code>, for example <code>{"DataFile": {"referenced": "old.eeg", "used": "sub-01_eeg.eeg"}}</code>; the streaming export writes the same entry into the store's <code>recording_metadata</code>.</p>
+<p>A header whose references all exist is passed to MNE unchanged, and so is one where neither the named file nor a same-stem sibling exists, so that MNE reports the missing file.</p>
+<p>Read errors are typed the same way on both paths: the importer and the streaming export classify an MNE failure with <code>classify_read_error</code>, so a corrupt header raises a <code>FileReadError</code> (or a subclass) from either path, and a message that quoted the temporary header copy or a staged file names the real <code>.vhdr</code>, or the dataset file the staged one stood for, instead. An error the operating system raises for this host rather than for the file (permission denied, an I/O error, a full disk, a stale network handle) is not typed: it propagates as the raw <code>OSError</code>, as it does from every importer (see <code>biosigio.is_host_condition</code>).</p>
 <h2 id="loading-data">Loading Data<a class="headerlink" href="#loading-data" title="Permanent link">&para;</a></h2>
 <p>Provide the path to the <code>.vhdr</code> header file to <code>Recording.from_file</code>. The <code>.vhdr</code> extension is recognized automatically, so the importer is inferred:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">biosigio</span><span class="w"> </span><span class="kn">import</span> <span class="n">Recording</span>
@@ -2785,6 +2825,7 @@
 <ul>
 <li><code>source_file</code>: Path to the <code>.vhdr</code> header file passed to <code>from_file</code>.</li>
 <li><code>number_of_signals</code>: The number of channels read from the recording.</li>
+<li><code>brainvision_header_recovered</code>: Present only when the header named missing files and same-stem siblings were read instead (see <a href="#renamed-files-and-stale-header-references">Renamed files and stale header references</a>).</li>
 </ul>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="n">rec</span> <span class="o">=</span> <span class="n">Recording</span><span class="o">.</span><span class="n">from_file</span><span class="p">(</span><span class="s1">'subject01.vhdr'</span><span class="p">)</span>
 <a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="nb">print</span><span class="p">(</span><span class="n">rec</span><span class="o">.</span><span class="n">get_metadata</span><span class="p">(</span><span class="s1">'source_file'</span><span class="p">))</span>

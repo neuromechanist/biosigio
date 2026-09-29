@@ -861,6 +861,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#repeated-channel-labels" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Repeated channel labels
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#exporter-implementation" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2757,6 +2768,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#repeated-channel-labels" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Repeated channel labels
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#exporter-implementation" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2889,8 +2911,9 @@ identical to what <code>pyedflib</code> would report for the same channel. A cha
 a degenerate <code>physical_min == physical_max</code> has no defined scale, so its output
 is the constant <code>physical_min</code> (== <code>physical_max</code>) throughout -- exactly zero in
 the common grounded/referential case. Recovering this way requires the <code>meg</code>
-extra (MNE); without it, the file still raises the same
-<code>CorruptFileError</code>/<code>FileReadError</code> it did before.</p>
+extra (MNE); without it, such a file raises an <code>ImportError</code> that names the
+<code>meg</code> extra, with pyedflib's own error as its <code>__cause__</code>. It is deliberately
+not a <code>BiosigIOError</code>: installing the extra makes the same file readable.</p>
 <p>A channel MNE auto-detects as a trigger/status channel (by default, one
 literally named <code>"Status"</code> or <code>"Trigger"</code>) is read with that detection
 turned off (<code>stim_channel=False</code>): MNE would otherwise give such a channel
@@ -2919,11 +2942,31 @@ out of the header's <code>patient_id</code>/<code>recording_id</code> fields (<c
 not defaulted to empty strings, since biosigIO does not re-implement
 <code>pyedflib</code>'s own sub-parsing of those two free-text fields for the fallback
 path.</p>
-<p>A file with two on-disk channels sharing the same label is also not covered:
-MNE renames the second one to keep channel names unique, which the header
-probe (independent of MNE by design) cannot predict, so this fails loud with
-a clear error rather than silently pairing the wrong header row with the
-wrong channel's data.</p>
+<p>A file with two on-disk channels sharing the same label is covered too.
+MNE renames the repeats (<code>EEG-0</code>, <code>EEG-1</code>), so the fallback pairs each channel
+with its header row by position rather than by label: MNE lists the signals in
+header order, minus the EDF+/BDF+ annotations channel. Each pairing is still
+checked by name, and a channel that cannot be paired fails loud rather than
+taking another row's scaling. The recovered channels carry the same suffixed
+labels a normal read produces (see <a href="#repeated-channel-labels">Repeated channel labels</a>).</p>
+<h2 id="repeated-channel-labels">Repeated channel labels<a class="headerlink" href="#repeated-channel-labels" title="Permanent link">&para;</a></h2>
+<p>EDF does not require unique labels; CHB-MIT, for example, declares <code>T8-P8</code>
+twice and uses <code>-</code> for several unused inputs. A <code>Recording</code> is keyed by label,
+so every occurrence of a repeated label gets a running suffix, the same way
+MNE names them: <code>T8-P8-0</code>, <code>T8-P8-1</code>. A suffix that would collide with an
+existing label falls through to <code>-a</code>, <code>-b</code>, and so on. A warning names the
+repeated labels and the file. The in-memory importer, the streaming Zarr export and the
+tolerant fallback all name the channels of one file identically, so a
+<code>channels.tsv</code> written by MNE-BIDS matches by name.</p>
+<p>Every rename is also recorded in the recording's metadata under
+<code>channel_labels_deduplicated</code>, as <code>{new_label: original_label}</code> (for example
+<code>{"T8-P8-0": "T8-P8", "T8-P8-1": "T8-P8"}</code>). Both Zarr export paths write it
+into the store's <code>recording_metadata</code>, so it survives a round trip; a file
+whose labels are already unique carries no such entry.</p>
+<p>For a single repeated label the names match MNE's exactly. When several
+repeated labels interact (one label's suffixed name colliding with another's),
+biosigIO resolves them in first-occurrence order, which is deterministic;
+MNE's order is not guaranteed, so the two can differ in that case.</p>
 <h2 id="exporter-implementation">Exporter Implementation<a class="headerlink" href="#exporter-implementation" title="Permanent link">&para;</a></h2>
 <p>The EDF exporter in biosigIO (<code>biosigio.exporters.edf</code>) also uses <code>pyedflib</code> to:</p>
 <ol>

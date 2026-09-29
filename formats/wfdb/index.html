@@ -850,6 +850,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#repeated-signal-names" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Repeated Signal Names
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#annotation-handling" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2590,6 +2601,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#repeated-signal-names" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Repeated Signal Names
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#annotation-handling" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2640,6 +2662,9 @@
 <a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a><span class="c1"># rec = Recording.from_file('record', importer='wfdb')</span>
 </code></pre></div>
 <p>biosigIO uses the <code>wfdb</code> library (PyPI package <code>wfdb</code>) internally. It ships as a core dependency, so no separate installation is required.</p>
+<h2 id="repeated-signal-names">Repeated Signal Names<a class="headerlink" href="#repeated-signal-names" title="Permanent link">&para;</a></h2>
+<p>The <code>wfdb</code> writer refuses a repeated signal name, but its reader accepts one from a hand-edited or foreign header. A <code>Recording</code> is keyed by channel label, so repeated names get the same running suffixes as repeated EDF labels (<code>II-0</code>, <code>II-1</code>; see <a href="../edf/#repeated-channel-labels">EDF repeated channel labels</a>) and a warning names them. Every signal is kept, and the renames are recorded in the metadata under <code>channel_labels_deduplicated</code> (<code>{new_label: original_label}</code>).</p>
+<p>A record <code>wfdb</code> cannot parse (a malformed header, a truncated or missing signal file, or a repeated name whose every suffix is already taken) raises a typed <code>FileReadError</code>, like the other importers.</p>
 <h2 id="annotation-handling">Annotation Handling<a class="headerlink" href="#annotation-handling" title="Permanent link">&para;</a></h2>
 <p>If an annotation file (e.g., <code>record.atr</code>) exists in the same directory and shares the same base name as the header file, the <code>WFDBImporter</code> will <strong>automatically load</strong> these annotations.</p>
 <p>Loaded annotations are stored in the <code>rec.events</code> pandas DataFrame with the following columns:</p>

@@ -2778,6 +2778,10 @@
 <a id="__codelineno-2-9" name="__codelineno-2-9" href="#__codelineno-2-9"></a><span class="n">emg1_info</span> <span class="o">=</span> <span class="n">rec</span><span class="o">.</span><span class="n">channels</span><span class="p">[</span><span class="s1">'EMG1'</span><span class="p">]</span>
 <a id="__codelineno-2-10" name="__codelineno-2-10" href="#__codelineno-2-10"></a><span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"EMG1 Unit: </span><span class="si">{</span><span class="n">emg1_info</span><span class="p">[</span><span class="s1">'physical_dimension'</span><span class="p">]</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
 </code></pre></div>
+<p>To change a channel's metadata, use <code>rec.set_channel()</code>, which validates the channel type and modality and re-derives the modality when only the type changes:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="n">rec</span><span class="o">.</span><span class="n">set_channel</span><span class="p">(</span><span class="s1">'EMG1'</span><span class="p">,</span> <span class="n">channel_type</span><span class="o">=</span><span class="s1">'EMG'</span><span class="p">,</span> <span class="n">physical_dimension</span><span class="o">=</span><span class="s1">'mV'</span><span class="p">)</span>
+</code></pre></div>
+<p><code>set_channel</code> never touches the samples. Channel labels are unique, so <code>rec.add_channel()</code> with an existing label raises <code>ValueError</code>; to replace a channel's samples, assign <code>rec.signals['EMG1'] = new_data</code> (same length as the recording).</p>
 <h2 id="annotations-events">Annotations / Events<a class="headerlink" href="#annotations-events" title="Permanent link">&para;</a></h2>
 <p>Time-stamped annotations or events associated with the recording are stored in the <code>rec.events</code> attribute as a pandas DataFrame.</p>
 <p>This DataFrame has the following standard columns:</p>
@@ -2794,46 +2798,46 @@
 <li><strong>Other Formats:</strong> For formats that don't have standardized annotation support within the file (like CSV, Trigno, OTB), annotations are typically not loaded automatically. You may need to load them from a separate file and add them manually.</li>
 </ul>
 <p><strong>Accessing Annotations:</strong></p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="c1"># Check if any events were loaded</span>
-<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="k">if</span> <span class="n">rec</span><span class="o">.</span><span class="n">events</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">rec</span><span class="o">.</span><span class="n">events</span><span class="o">.</span><span class="n">empty</span><span class="p">:</span>
-<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a>    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"Loaded </span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">rec</span><span class="o">.</span><span class="n">events</span><span class="p">)</span><span class="si">}</span><span class="s2"> events."</span><span class="p">)</span>
-<a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a>    <span class="nb">print</span><span class="p">(</span><span class="s2">"First 5 events:"</span><span class="p">)</span>
-<a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a>    <span class="nb">print</span><span class="p">(</span><span class="n">rec</span><span class="o">.</span><span class="n">events</span><span class="o">.</span><span class="n">head</span><span class="p">())</span>
-<a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a>
-<a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a>    <span class="c1"># Filter events by description</span>
-<a id="__codelineno-3-8" name="__codelineno-3-8" href="#__codelineno-3-8"></a>    <span class="n">marker_events</span> <span class="o">=</span> <span class="n">rec</span><span class="o">.</span><span class="n">events</span><span class="p">[</span><span class="n">rec</span><span class="o">.</span><span class="n">events</span><span class="p">[</span><span class="s1">'description'</span><span class="p">]</span><span class="o">.</span><span class="n">str</span><span class="o">.</span><span class="n">contains</span><span class="p">(</span><span class="s1">'Marker'</span><span class="p">)]</span>
-<a id="__codelineno-3-9" name="__codelineno-3-9" href="#__codelineno-3-9"></a>    <span class="nb">print</span><span class="p">(</span><span class="s2">"</span><span class="se">\n</span><span class="s2">Marker Events:"</span><span class="p">)</span>
-<a id="__codelineno-3-10" name="__codelineno-3-10" href="#__codelineno-3-10"></a>    <span class="nb">print</span><span class="p">(</span><span class="n">marker_events</span><span class="p">)</span>
-<a id="__codelineno-3-11" name="__codelineno-3-11" href="#__codelineno-3-11"></a><span class="k">else</span><span class="p">:</span>
-<a id="__codelineno-3-12" name="__codelineno-3-12" href="#__codelineno-3-12"></a>    <span class="nb">print</span><span class="p">(</span><span class="s2">"No events/annotations loaded."</span><span class="p">)</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="c1"># Check if any events were loaded</span>
+<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="k">if</span> <span class="n">rec</span><span class="o">.</span><span class="n">events</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">rec</span><span class="o">.</span><span class="n">events</span><span class="o">.</span><span class="n">empty</span><span class="p">:</span>
+<a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a>    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"Loaded </span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">rec</span><span class="o">.</span><span class="n">events</span><span class="p">)</span><span class="si">}</span><span class="s2"> events."</span><span class="p">)</span>
+<a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a>    <span class="nb">print</span><span class="p">(</span><span class="s2">"First 5 events:"</span><span class="p">)</span>
+<a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a>    <span class="nb">print</span><span class="p">(</span><span class="n">rec</span><span class="o">.</span><span class="n">events</span><span class="o">.</span><span class="n">head</span><span class="p">())</span>
+<a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a>
+<a id="__codelineno-4-7" name="__codelineno-4-7" href="#__codelineno-4-7"></a>    <span class="c1"># Filter events by description</span>
+<a id="__codelineno-4-8" name="__codelineno-4-8" href="#__codelineno-4-8"></a>    <span class="n">marker_events</span> <span class="o">=</span> <span class="n">rec</span><span class="o">.</span><span class="n">events</span><span class="p">[</span><span class="n">rec</span><span class="o">.</span><span class="n">events</span><span class="p">[</span><span class="s1">'description'</span><span class="p">]</span><span class="o">.</span><span class="n">str</span><span class="o">.</span><span class="n">contains</span><span class="p">(</span><span class="s1">'Marker'</span><span class="p">)]</span>
+<a id="__codelineno-4-9" name="__codelineno-4-9" href="#__codelineno-4-9"></a>    <span class="nb">print</span><span class="p">(</span><span class="s2">"</span><span class="se">\n</span><span class="s2">Marker Events:"</span><span class="p">)</span>
+<a id="__codelineno-4-10" name="__codelineno-4-10" href="#__codelineno-4-10"></a>    <span class="nb">print</span><span class="p">(</span><span class="n">marker_events</span><span class="p">)</span>
+<a id="__codelineno-4-11" name="__codelineno-4-11" href="#__codelineno-4-11"></a><span class="k">else</span><span class="p">:</span>
+<a id="__codelineno-4-12" name="__codelineno-4-12" href="#__codelineno-4-12"></a>    <span class="nb">print</span><span class="p">(</span><span class="s2">"No events/annotations loaded."</span><span class="p">)</span>
 </code></pre></div>
 <p><strong>Adding Annotations Manually:</strong></p>
 <p>You can add events programmatically using the <code>rec.add_event()</code> method:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="n">rec</span><span class="o">.</span><span class="n">add_event</span><span class="p">(</span><span class="n">onset</span><span class="o">=</span><span class="mf">10.5</span><span class="p">,</span> <span class="n">duration</span><span class="o">=</span><span class="mf">5.0</span><span class="p">,</span> <span class="n">description</span><span class="o">=</span><span class="s2">"Rest Period"</span><span class="p">)</span>
-<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="n">rec</span><span class="o">.</span><span class="n">add_event</span><span class="p">(</span><span class="n">onset</span><span class="o">=</span><span class="mf">15.5</span><span class="p">,</span> <span class="n">duration</span><span class="o">=</span><span class="mf">0.0</span><span class="p">,</span> <span class="n">description</span><span class="o">=</span><span class="s2">"Stimulus Onset"</span><span class="p">)</span>
-<a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a>
-<a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a><span class="nb">print</span><span class="p">(</span><span class="s2">"</span><span class="se">\n</span><span class="s2">Events after adding manually:"</span><span class="p">)</span>
-<a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a><span class="nb">print</span><span class="p">(</span><span class="n">rec</span><span class="o">.</span><span class="n">events</span><span class="p">)</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="n">rec</span><span class="o">.</span><span class="n">add_event</span><span class="p">(</span><span class="n">onset</span><span class="o">=</span><span class="mf">10.5</span><span class="p">,</span> <span class="n">duration</span><span class="o">=</span><span class="mf">5.0</span><span class="p">,</span> <span class="n">description</span><span class="o">=</span><span class="s2">"Rest Period"</span><span class="p">)</span>
+<a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a><span class="n">rec</span><span class="o">.</span><span class="n">add_event</span><span class="p">(</span><span class="n">onset</span><span class="o">=</span><span class="mf">15.5</span><span class="p">,</span> <span class="n">duration</span><span class="o">=</span><span class="mf">0.0</span><span class="p">,</span> <span class="n">description</span><span class="o">=</span><span class="s2">"Stimulus Onset"</span><span class="p">)</span>
+<a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a>
+<a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a><span class="nb">print</span><span class="p">(</span><span class="s2">"</span><span class="se">\n</span><span class="s2">Events after adding manually:"</span><span class="p">)</span>
+<a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a><span class="nb">print</span><span class="p">(</span><span class="n">rec</span><span class="o">.</span><span class="n">events</span><span class="p">)</span>
 </code></pre></div>
 <p><strong>Exporting Annotations:</strong></p>
 <p>When exporting data using <code>rec.to_edf()</code>, the events stored in <code>rec.events</code> are automatically written to the EDF+/BDF+ annotation channel.</p>
 <h2 id="setting-metadata">Setting Metadata<a class="headerlink" href="#setting-metadata" title="Permanent link">&para;</a></h2>
 <p>You can add or modify metadata fields:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="c1"># Set a single metadata field</span>
-<a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a><span class="n">rec</span><span class="o">.</span><span class="n">set_metadata</span><span class="p">(</span><span class="s1">'subject'</span><span class="p">,</span> <span class="s1">'S001'</span><span class="p">)</span>
-<a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a>
-<a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a><span class="c1"># Set several fields with repeated set_metadata calls</span>
-<a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a><span class="n">rec</span><span class="o">.</span><span class="n">set_metadata</span><span class="p">(</span><span class="s1">'condition'</span><span class="p">,</span> <span class="s1">'resting'</span><span class="p">)</span>
-<a id="__codelineno-5-6" name="__codelineno-5-6" href="#__codelineno-5-6"></a><span class="n">rec</span><span class="o">.</span><span class="n">set_metadata</span><span class="p">(</span><span class="s1">'experimenter'</span><span class="p">,</span> <span class="s1">'John Doe'</span><span class="p">)</span>
-<a id="__codelineno-5-7" name="__codelineno-5-7" href="#__codelineno-5-7"></a><span class="n">rec</span><span class="o">.</span><span class="n">set_metadata</span><span class="p">(</span><span class="s1">'recording_date'</span><span class="p">,</span> <span class="s1">'2023-01-15'</span><span class="p">)</span>
-<a id="__codelineno-5-8" name="__codelineno-5-8" href="#__codelineno-5-8"></a>
-<a id="__codelineno-5-9" name="__codelineno-5-9" href="#__codelineno-5-9"></a><span class="c1"># Or update the metadata dictionary directly</span>
-<a id="__codelineno-5-10" name="__codelineno-5-10" href="#__codelineno-5-10"></a><span class="n">rec</span><span class="o">.</span><span class="n">metadata</span><span class="o">.</span><span class="n">update</span><span class="p">({</span>
-<a id="__codelineno-5-11" name="__codelineno-5-11" href="#__codelineno-5-11"></a>    <span class="s1">'subject'</span><span class="p">:</span> <span class="s1">'S001'</span><span class="p">,</span>
-<a id="__codelineno-5-12" name="__codelineno-5-12" href="#__codelineno-5-12"></a>    <span class="s1">'condition'</span><span class="p">:</span> <span class="s1">'resting'</span><span class="p">,</span>
-<a id="__codelineno-5-13" name="__codelineno-5-13" href="#__codelineno-5-13"></a>    <span class="s1">'experimenter'</span><span class="p">:</span> <span class="s1">'John Doe'</span><span class="p">,</span>
-<a id="__codelineno-5-14" name="__codelineno-5-14" href="#__codelineno-5-14"></a>    <span class="s1">'recording_date'</span><span class="p">:</span> <span class="s1">'2023-01-15'</span>
-<a id="__codelineno-5-15" name="__codelineno-5-15" href="#__codelineno-5-15"></a><span class="p">})</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="c1"># Set a single metadata field</span>
+<a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a><span class="n">rec</span><span class="o">.</span><span class="n">set_metadata</span><span class="p">(</span><span class="s1">'subject'</span><span class="p">,</span> <span class="s1">'S001'</span><span class="p">)</span>
+<a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a>
+<a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a><span class="c1"># Set several fields with repeated set_metadata calls</span>
+<a id="__codelineno-6-5" name="__codelineno-6-5" href="#__codelineno-6-5"></a><span class="n">rec</span><span class="o">.</span><span class="n">set_metadata</span><span class="p">(</span><span class="s1">'condition'</span><span class="p">,</span> <span class="s1">'resting'</span><span class="p">)</span>
+<a id="__codelineno-6-6" name="__codelineno-6-6" href="#__codelineno-6-6"></a><span class="n">rec</span><span class="o">.</span><span class="n">set_metadata</span><span class="p">(</span><span class="s1">'experimenter'</span><span class="p">,</span> <span class="s1">'John Doe'</span><span class="p">)</span>
+<a id="__codelineno-6-7" name="__codelineno-6-7" href="#__codelineno-6-7"></a><span class="n">rec</span><span class="o">.</span><span class="n">set_metadata</span><span class="p">(</span><span class="s1">'recording_date'</span><span class="p">,</span> <span class="s1">'2023-01-15'</span><span class="p">)</span>
+<a id="__codelineno-6-8" name="__codelineno-6-8" href="#__codelineno-6-8"></a>
+<a id="__codelineno-6-9" name="__codelineno-6-9" href="#__codelineno-6-9"></a><span class="c1"># Or update the metadata dictionary directly</span>
+<a id="__codelineno-6-10" name="__codelineno-6-10" href="#__codelineno-6-10"></a><span class="n">rec</span><span class="o">.</span><span class="n">metadata</span><span class="o">.</span><span class="n">update</span><span class="p">({</span>
+<a id="__codelineno-6-11" name="__codelineno-6-11" href="#__codelineno-6-11"></a>    <span class="s1">'subject'</span><span class="p">:</span> <span class="s1">'S001'</span><span class="p">,</span>
+<a id="__codelineno-6-12" name="__codelineno-6-12" href="#__codelineno-6-12"></a>    <span class="s1">'condition'</span><span class="p">:</span> <span class="s1">'resting'</span><span class="p">,</span>
+<a id="__codelineno-6-13" name="__codelineno-6-13" href="#__codelineno-6-13"></a>    <span class="s1">'experimenter'</span><span class="p">:</span> <span class="s1">'John Doe'</span><span class="p">,</span>
+<a id="__codelineno-6-14" name="__codelineno-6-14" href="#__codelineno-6-14"></a>    <span class="s1">'recording_date'</span><span class="p">:</span> <span class="s1">'2023-01-15'</span>
+<a id="__codelineno-6-15" name="__codelineno-6-15" href="#__codelineno-6-15"></a><span class="p">})</span>
 </code></pre></div>
 <h2 id="common-metadata-fields">Common Metadata Fields<a class="headerlink" href="#common-metadata-fields" title="Permanent link">&para;</a></h2>
 <p>While biosigIO is flexible about what metadata you can store, some common fields include:</p>
@@ -2880,29 +2884,29 @@
 </table>
 <h2 id="metadata-in-exported-files">Metadata in Exported Files<a class="headerlink" href="#metadata-in-exported-files" title="Permanent link">&para;</a></h2>
 <p>When exporting to EDF/BDF, biosigIO automatically includes metadata in the file header and generates a sidecar channels.tsv file with channel-specific metadata following BIDS conventions:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="c1"># Export to EDF with metadata</span>
-<a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a><span class="n">rec</span><span class="o">.</span><span class="n">to_edf</span><span class="p">(</span><span class="s1">'output'</span><span class="p">)</span>
-<a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a>
-<a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a><span class="c1"># This will create:</span>
-<a id="__codelineno-6-5" name="__codelineno-6-5" href="#__codelineno-6-5"></a><span class="c1"># - output.edf or output.bdf (depending on format selection)</span>
-<a id="__codelineno-6-6" name="__codelineno-6-6" href="#__codelineno-6-6"></a><span class="c1"># - output_channels.tsv (channel metadata in tab-separated format, BIDS naming)</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="c1"># Export to EDF with metadata</span>
+<a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a><span class="n">rec</span><span class="o">.</span><span class="n">to_edf</span><span class="p">(</span><span class="s1">'output'</span><span class="p">)</span>
+<a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a>
+<a id="__codelineno-7-4" name="__codelineno-7-4" href="#__codelineno-7-4"></a><span class="c1"># This will create:</span>
+<a id="__codelineno-7-5" name="__codelineno-7-5" href="#__codelineno-7-5"></a><span class="c1"># - output.edf or output.bdf (depending on format selection)</span>
+<a id="__codelineno-7-6" name="__codelineno-7-6" href="#__codelineno-7-6"></a><span class="c1"># - output_channels.tsv (channel metadata in tab-separated format, BIDS naming)</span>
 </code></pre></div>
 <p>The channels.tsv file will include information like:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a>name    type    units   sampling_frequency    ...
-<a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a>EMG1    EMG     µV      2000                  ...
-<a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a>EMG2    EMG     µV      2000                  ...
-<a id="__codelineno-7-4" name="__codelineno-7-4" href="#__codelineno-7-4"></a>ACC1    ACC     g       2000                  ...
+<div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a>name    type    units   sampling_frequency    ...
+<a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a>EMG1    EMG     µV      2000                  ...
+<a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a>EMG2    EMG     µV      2000                  ...
+<a id="__codelineno-8-4" name="__codelineno-8-4" href="#__codelineno-8-4"></a>ACC1    ACC     g       2000                  ...
 </code></pre></div>
 <h2 id="copying-metadata-between-recording-objects">Copying Metadata Between Recording Objects<a class="headerlink" href="#copying-metadata-between-recording-objects" title="Permanent link">&para;</a></h2>
 <p>When working with multiple Recording objects, you can copy metadata between them:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="c1"># Create a subset with only EMG channels</span>
-<a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a><span class="n">emg_only</span> <span class="o">=</span> <span class="n">rec</span><span class="o">.</span><span class="n">select_channels</span><span class="p">(</span><span class="n">channel_type</span><span class="o">=</span><span class="s1">'EMG'</span><span class="p">)</span>
-<a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a>
-<a id="__codelineno-8-4" name="__codelineno-8-4" href="#__codelineno-8-4"></a><span class="c1"># Copy all metadata from original to subset</span>
-<a id="__codelineno-8-5" name="__codelineno-8-5" href="#__codelineno-8-5"></a><span class="n">emg_only</span><span class="o">.</span><span class="n">metadata</span> <span class="o">=</span> <span class="n">rec</span><span class="o">.</span><span class="n">metadata</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
-<a id="__codelineno-8-6" name="__codelineno-8-6" href="#__codelineno-8-6"></a>
-<a id="__codelineno-8-7" name="__codelineno-8-7" href="#__codelineno-8-7"></a><span class="c1"># Or selectively copy metadata</span>
-<a id="__codelineno-8-8" name="__codelineno-8-8" href="#__codelineno-8-8"></a><span class="n">emg_only</span><span class="o">.</span><span class="n">set_metadata</span><span class="p">(</span><span class="s1">'subject'</span><span class="p">,</span> <span class="n">rec</span><span class="o">.</span><span class="n">get_metadata</span><span class="p">(</span><span class="s1">'subject'</span><span class="p">))</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a><span class="c1"># Create a subset with only EMG channels</span>
+<a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a><span class="n">emg_only</span> <span class="o">=</span> <span class="n">rec</span><span class="o">.</span><span class="n">select_channels</span><span class="p">(</span><span class="n">channel_type</span><span class="o">=</span><span class="s1">'EMG'</span><span class="p">)</span>
+<a id="__codelineno-9-3" name="__codelineno-9-3" href="#__codelineno-9-3"></a>
+<a id="__codelineno-9-4" name="__codelineno-9-4" href="#__codelineno-9-4"></a><span class="c1"># Copy all metadata from original to subset</span>
+<a id="__codelineno-9-5" name="__codelineno-9-5" href="#__codelineno-9-5"></a><span class="n">emg_only</span><span class="o">.</span><span class="n">metadata</span> <span class="o">=</span> <span class="n">rec</span><span class="o">.</span><span class="n">metadata</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
+<a id="__codelineno-9-6" name="__codelineno-9-6" href="#__codelineno-9-6"></a>
+<a id="__codelineno-9-7" name="__codelineno-9-7" href="#__codelineno-9-7"></a><span class="c1"># Or selectively copy metadata</span>
+<a id="__codelineno-9-8" name="__codelineno-9-8" href="#__codelineno-9-8"></a><span class="n">emg_only</span><span class="o">.</span><span class="n">set_metadata</span><span class="p">(</span><span class="s1">'subject'</span><span class="p">,</span> <span class="n">rec</span><span class="o">.</span><span class="n">get_metadata</span><span class="p">(</span><span class="s1">'subject'</span><span class="p">))</span>
 </code></pre></div>
 <h2 id="best-practices-for-metadata">Best Practices for Metadata<a class="headerlink" href="#best-practices-for-metadata" title="Permanent link">&para;</a></h2>
 <ol>

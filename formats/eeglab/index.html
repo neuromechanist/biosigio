@@ -2851,7 +2851,12 @@ extension -- both forms are <code>.set</code>.</p>
 <h3 id="matlab-v73-hdf5-path">MATLAB v7.3 (HDF5) path<a class="headerlink" href="#matlab-v73-hdf5-path" title="Permanent link">&para;</a></h3>
 <ol>
 <li>Opening the file with h5py and reading the top-level <code>EEG</code> group's fields
-   directly (<code>nbchan</code>, <code>srate</code>, <code>pnts</code>, <code>trials</code>, <code>data</code>, ...). Header scalars
+   directly (<code>nbchan</code>, <code>srate</code>, <code>pnts</code>, <code>trials</code>, <code>data</code>, ...). A v7.3 file can
+   also carry the struct's fields flat at the HDF5 root with no <code>EEG</code> group;
+   when the root holds <code>nbchan</code>, <code>srate</code>, <code>pnts</code> and <code>data</code>, the root is read
+   as the struct (an <code>EEG</code> group wins when both are present). A file with
+   neither layout raises <code>FileReadError</code> saying it is not an EEGLAB v7.3
+   dataset (not <code>CorruptFileError</code>: the HDF5 container itself is valid). Header scalars
    round-trip through HDF5 as 1x1 float arrays rather than true scalars, so
    they are flattened and coerced to int/float explicitly</li>
 <li>Reading the signal matrix from <code>EEG.data</code>. HDF5 stores the matrix
@@ -2865,7 +2870,16 @@ extension -- both forms are <code>.set</code>.</p>
    latency, ...), each stored as an array of HDF5 object references into a
    <code>#refs#</code> group rather than as flat values. Every field is dereferenced
    through <code>#refs#</code>, and char arrays are decoded from their Unicode
-   code-point representation</li>
+   code-point representation. An empty MATLAB value (<code>[]</code>, stored as a small
+   <code>uint64</code> dimensions array flagged <code>MATLAB_empty</code>) is read as no value, the
+   same as a null reference, rather than as characters or a number. That
+   includes an empty top-level <code>EEG.chanlocs = []</code> or <code>EEG.event = []</code>, which
+   MATLAB stores as such an array rather than a struct group: it reads as no
+   channel descriptions (default <code>ChannelN</code> labels) or no events. A non-empty
+   numeric or character array in their place raises <code>FileReadError</code> naming
+   the field, rather than being read as none. An event
+   whose type or latency is empty is dropped, and a channel whose label is
+   empty gets the default label; either is logged as a warning with a count</li>
 <li>Raising the same <code>NotContinuousRecordingError</code> the rest of biosigIO uses
    when <code>EEG.trials &gt; 1</code> (an epoched file), instead of silently flattening
    epochs into a fake continuous stream</li>
@@ -2892,10 +2906,9 @@ extension -- both forms are <code>.set</code>.</p>
 <h2 id="channel-type-mapping">Channel Type Mapping<a class="headerlink" href="#channel-type-mapping" title="Permanent link">&para;</a></h2>
 <p>EEGLAB doesn't always explicitly designate channel types. biosigIO's EEGLAB importer uses the following rules to assign channel types:</p>
 <ol>
-<li>Channels with 'EMG' in the name are assigned type 'EMG'</li>
-<li>Channels with 'EEG' in the name are assigned type 'EEG'</li>
-<li>Channels with 'ACC' in the name are assigned type 'ACC'</li>
-<li>Other channels are assigned type 'OTHER'</li>
+<li>A recognized <code>chanlocs.type</code> is used directly: <code>EEG</code>, <code>EMG</code>, <code>ECG</code>, <code>EKG</code>, <code>EOG</code>, <code>SEEG</code> and <code>ECOG</code> pass through; <code>ACC</code>/<code>ACCELEROMETER</code> become <code>ACC</code>, <code>GYRO</code>/<code>GYROSCOPE</code> become <code>GYRO</code>, and <code>TRIG</code>/<code>TRIGGER</code> become <code>TRIG</code></li>
+<li>Otherwise the label is searched, in this order, for 'EMG', 'ECG' or 'EKG' (type <code>ECG</code>), 'EOG', 'ACC', 'GYRO' and 'TRIG'</li>
+<li>Other channels are assigned type 'OTHER'; the label alone never makes a channel <code>EEG</code>, so a BIDS <code>channels.tsv</code> is the way to type unlabeled EEG channels</li>
 </ol>
 <h2 id="notes-and-limitations">Notes and Limitations<a class="headerlink" href="#notes-and-limitations" title="Permanent link">&para;</a></h2>
 <ul>
@@ -2904,6 +2917,9 @@ extension -- both forms are <code>.set</code>.</p>
 <li>Signal data stored inline in the <code>.set</code> or in a separate float32 <code>.fdt</code> file is supported for both save forms; the sibling <code>.fdt</code> is resolved by the <code>.set</code> path (so BIDS-renamed files load even though <code>EEG.data</code> keeps the original <code>.fdt</code> name)</li>
 <li>Event markers are loaded into the <code>events</code> table (<code>rec.events</code>): EEGLAB event latency/duration (samples) are converted to onset/duration in seconds and the event <code>type</code> becomes the description</li>
 <li>Channel locations (if available) are preserved in the channel information</li>
+<li>Channel labels are made unique: a repeated <code>chanlocs</code> label (or a padded default label that collides with a real one) is renamed with a numeric suffix (<code>Fz</code>, <code>Fz_2</code>, <code>Fz_3</code>, ...) and a warning names it. This <code>_2</code>, <code>_3</code> scheme is EEGLAB's own; EDF/BDF, WFDB and Zarr re-import use MNE-style <code>-0</code>, <code>-1</code> suffixes instead (see <a href="../edf/#repeated-channel-labels">EDF repeated channel labels</a>)</li>
+<li>When the <code>.fdt</code> read is not the one <code>EEG.data</code> names (the BIDS-renamed sibling), the substitution is logged at info level and recorded in the metadata as <code>eeglab_fdt_recovered</code>, for example <code>{"referenced": "Merged.fdt", "used": "sub-01_eeg.fdt"}</code></li>
+<li>A header with no usable sampling rate (<code>srate</code> absent, empty or zero) is read at 1000 Hz, and a warning says so</li>
 <li>An epoched MATLAB v7.3 file (<code>EEG.trials &gt; 1</code>) raises <code>NotContinuousRecordingError</code> rather than being read as a fake continuous recording. The classic path's separate, pre-existing behavior for an epoched <code>.fdt</code> is unchanged here: it concatenates trials into one continuous series instead (see <code>test_eeglab_reads_epoched_fdt</code>). The two paths therefore disagree on what an epoched file should become; that inconsistency predates this change and is tracked separately rather than resolved here.</li>
 <li>Some EEGLAB-specific information may not be fully preserved in the conversion</li>
 <li>Time information is properly handled to maintain accurate timing in the imported data </li>

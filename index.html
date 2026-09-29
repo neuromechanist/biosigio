@@ -2679,7 +2679,7 @@
 <h2 id="key-features">Key Features<a class="headerlink" href="#key-features" title="Permanent link">&para;</a></h2>
 <ul>
 <li><strong>Multi-system support</strong>:</li>
-<li>EEGLAB set files (supported)</li>
+<li>EEGLAB set files (supported, classic and MATLAB v7.3; v7.3 needs the <code>hdf5</code> extra)</li>
 <li>Delsys Trigno (supported)</li>
 <li>OTB Systems (supported)</li>
 <li>EDF/BDF(+) (supported, including annotations)</li>
@@ -2751,6 +2751,8 @@
 <li><strong>API Reference</strong>: Complete documentation of classes and methods</li>
 <li><strong>Examples</strong>: Practical examples for various use cases</li>
 </ul>
+<p>What changed in each release is recorded in the <a href="https://github.com/neuromechanist/biosigio/blob/main/CHANGELOG.md">changelog</a>.</p>
+<p><strong>Breaking in 1.2.9:</strong> <code>Recording.add_channel</code> raises <code>ValueError</code> for a label that already exists instead of silently replacing that channel; use <code>set_channel</code> to change metadata or assign <code>rec.signals[label]</code> to replace samples.</p>
 <h2 id="license">License<a class="headerlink" href="#license" title="Permanent link">&para;</a></h2>
 <p>This project is licensed under the BSD 3-Clause License. </p>
 
