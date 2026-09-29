@@ -14,6 +14,7 @@ import os
 import re
 import shutil
 import tempfile
+import unicodedata
 from collections.abc import Iterator
 
 import pandas as pd
@@ -95,14 +96,17 @@ def _stage(target: str, staged: str) -> None:
 def _sibling_finder(stem: str):
     """Return ``find(exts)``: the first existing ``<stem><ext>`` for ``exts``, or None.
 
-    Each extension is tried exactly first, then case-insensitively (``X.EEG``
-    or ``X.VMRK`` beside ``X.vhdr`` on a case-sensitive filesystem), where a
-    case-insensitive candidate is accepted only when it is the ONLY one: two
-    files differing only in case leave the reference unresolved rather than
-    guessing. The directory is listed once, lazily.
+    Each extension is tried exactly first, then with ONLY the extension's case
+    ignored (``X.EEG`` or ``X.VMRK`` beside ``X.vhdr`` on a case-sensitive
+    filesystem). The stem must still be the header's own, compared exactly up
+    to Unicode normalization (an NFD ``é`` equals an NFC one), so ``x.eeg`` is
+    never taken for ``X``'s data. A candidate found this way is accepted only
+    when it is the ONLY one: two files differing only in extension case leave
+    the reference unresolved rather than guessing. The directory is listed
+    once, lazily.
     """
     directory = os.path.dirname(stem)
-    base = os.path.basename(stem)
+    base = unicodedata.normalize("NFC", os.path.basename(stem))
     entries: list[str] | None = None
 
     def listing() -> list[str]:
@@ -127,11 +131,13 @@ def _sibling_finder(stem: str):
             exact = stem + ext
             if os.path.isfile(exact):
                 return exact
-            wanted = (base + ext).lower()
             matches = [
                 name
                 for name in listing()
-                if name.lower() == wanted and os.path.isfile(os.path.join(directory, name))
+                if len(name) > len(ext)
+                and name[-len(ext) :].lower() == ext.lower()
+                and unicodedata.normalize("NFC", name[: -len(ext)]) == base
+                and os.path.isfile(os.path.join(directory, name))
             ]
             if len(matches) == 1:
                 return os.path.join(directory, matches[0])

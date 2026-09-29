@@ -509,6 +509,45 @@ def test_ambiguous_case_insensitive_siblings_are_not_guessed(tmp_path):
         Recording.from_file(vhdr)
 
 
+def test_sibling_with_a_different_stem_case_is_not_taken(tmp_path):
+    """Only the extension's case is ignored: ``SUB-01...eeg`` is not the data of
+    ``sub-01....vhdr``, so the stale reference stays unresolved."""
+    if not _case_sensitive(tmp_path):
+        pytest.skip("needs a case-sensitive filesystem to hold a differently cased stem")
+    vhdr, _ = _write_triplet(tmp_path, "old.eeg", f"{STEM}.vmrk")
+    os.rename(tmp_path / f"{STEM}.eeg", tmp_path / f"{STEM.upper()}.eeg")
+    substitutions: dict = {}
+    with resolved_vhdr(vhdr, substitutions=substitutions) as used:
+        assert used == vhdr
+    assert substitutions == {}
+    with pytest.raises(FileReadError, match="old.eeg"):
+        Recording.from_file(vhdr)
+
+
+def test_sibling_stem_matches_across_unicode_normalization(tmp_path):
+    """A header named in NFC beside a data file whose stem is the same text in
+    NFD (as some filesystems and archivers write it), with an upper-case
+    extension so the listing fallback is what finds it."""
+    import unicodedata
+
+    stem_nfc = unicodedata.normalize("NFC", "sub-é_eeg")
+    stem_nfd = unicodedata.normalize("NFD", stem_nfc)
+    assert stem_nfc != stem_nfd
+    vhdr, data = _write_triplet(tmp_path, "old.eeg", "old.vmrk")
+    os.rename(tmp_path / f"{STEM}.eeg", tmp_path / f"{stem_nfd}.EEG")
+    os.rename(tmp_path / f"{STEM}.vmrk", tmp_path / f"{stem_nfc}.vmrk")
+    os.rename(vhdr, tmp_path / f"{stem_nfc}.vhdr")
+    vhdr = str(tmp_path / f"{stem_nfc}.vhdr")
+    substitutions: dict = {}
+    with resolved_vhdr(vhdr, substitutions=substitutions):
+        pass
+    # A case- and normalization-insensitive filesystem (macOS) already finds it
+    # by the exact name, so only the equivalence is asserted, not the spelling.
+    used = unicodedata.normalize("NFC", substitutions["DataFile"]["used"])
+    assert used.lower() == f"{stem_nfc}.eeg"
+    _assert_loaded(Recording.from_file(vhdr), data)
+
+
 # --- encodings the patched copy has to handle ----------------------------------
 
 

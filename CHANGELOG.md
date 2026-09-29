@@ -102,8 +102,9 @@ which keep the full notes; releases older than 1.1.0 are listed there only.
   and an EEGLAB `.fdt` read under a name other than the one `EEG.data` gives is recorded as
   `eeglab_fdt_recovered` (`{"referenced": ..., "used": ...}`).
   Each key appears only when it applies; a Zarr store without these keys reads exactly as before.
-- BrainVision sibling lookup falls back to a case-insensitive match (`<stem>.EEG`, `<stem>.VMRK`)
-  when exactly one file matches; an upper-case marker file is staged under a lower-case name,
+- BrainVision sibling lookup falls back to ignoring the extension's case (`<stem>.EEG`, `<stem>.VMRK`)
+  when exactly one file matches; the stem must still match exactly,
+  up to Unicode normalization (NFC or NFD); an upper-case marker file is staged under a lower-case name,
   because MNE selects its marker reader by the exact `.vmrk` suffix.
 - New warnings replace silent behavior: an EEGLAB v7.3 event dropped for an empty type or latency
   and a channel given the default label for an empty label are counted,
