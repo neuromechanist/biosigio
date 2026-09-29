@@ -84,12 +84,18 @@ import numpy as np
 import pandas as pd
 import pyedflib
 
+from ._labels import unique_channel_labels
+
 # Reasons `classify_pyedflib_error` can return. Stable strings: stored verbatim
 # in `Recording` metadata (`edf_tolerant_read_reason`) as part of the recovered-
 # read provenance, so treat them as a small public vocabulary, not free text.
 DEGENERATE_PHYSICAL_RANGE = "degenerate_physical_range"
 MALFORMED_NUMERIC_FIELD = "malformed_numeric_field"
 DISCONTINUOUS_DATARECORDS = "discontinuous_datarecords"
+
+# Labels of the EDF+/BDF+ annotations (TAL) channel, which MNE (like pyedflib)
+# does not list as a signal; matched exactly, as MNE's ``_find_tal_idx`` does.
+_ANNOTATION_LABELS = ("EDF Annotations", "BDF Annotations")
 
 # pyedflib "... compliant (<field>)" field names that are purely numeric (ASCII
 # digits, sign, decimal point/comma) and therefore fail in the same way a NUL-
@@ -413,12 +419,19 @@ def read_edf_tolerant(filepath: str, reason: str) -> EdfFallbackRecording:
     ``OSError``/``FileReadError`` for anything that turns out not to be
     recoverable after all: a truncation the safety net catches, a per-channel
     unit gain that disagrees with what biosigIO independently expects (see
-    :func:`_channel_gains`), or a channel MNE's reader renamed in a way this
-    header probe can't match back up -- notably, a file with two on-disk
-    channels sharing a label: MNE's own ``_unique_ch_names`` de-duplication
-    would rename the second one (e.g. ``"EEG-1"``), which this probe (by
-    design independent of MNE) has no way to predict, so it fails loud here
-    rather than risk pairing the wrong header row with the wrong data.
+    :func:`_channel_gains`), or a channel MNE read that cannot be paired back
+    up with its header row.
+
+    Channels are paired with header rows by POSITION: MNE lists the header's
+    signals in on-disk order minus the EDF+/BDF+ annotations channel, so the
+    n-th name in ``raw.ch_names`` is the n-th non-annotation header row. Each
+    pairing is still checked by name, so a reader that reorders or drops a
+    channel fails loud rather than attaching one row's scaling to another
+    row's data. The check accepts MNE's own renaming of a repeated label: two
+    header rows both labelled ``"EEG"`` come back from MNE as ``"EEG-0"`` and
+    ``"EEG-1"``. The labels returned are biosigIO's (see
+    :func:`~biosigio.importers._labels.unique_channel_labels`), not MNE's, so
+    a recovered read names its channels exactly as a normal read would.
     """
     from ..exceptions import FileReadError
     from ._mne_common import require_mne
@@ -436,21 +449,27 @@ def read_edf_tolerant(filepath: str, reason: str) -> EdfFallbackRecording:
     data = raw.get_data()
     sfreq = float(raw.info["sfreq"])
 
-    by_label = {ch["label"]: ch for ch in probe.channels}
-    probed_channels: list[dict[str, Any]] = []
-    for name in raw.ch_names:
-        probed = by_label.get(name)
-        if probed is None:
+    # Pair by position (see the docstring): MNE drops only the annotations
+    # channel, and renames a repeated label "<label>-<suffix>".
+    probed_channels = [ch for ch in probe.channels if ch["label"] not in _ANNOTATION_LABELS]
+    if len(probed_channels) != len(raw.ch_names):
+        raise FileReadError(
+            f"{filepath}: fallback reader read {len(raw.ch_names)} channels but the "
+            f"file's own header declares {len(probed_channels)} signal channels"
+        )
+    for name, probed in zip(raw.ch_names, probed_channels, strict=True):
+        if name != probed["label"] and not name.startswith(f"{probed['label']}-"):
             raise FileReadError(
                 f"{filepath}: fallback reader could not match channel {name!r} "
-                "read by MNE back to a channel in the file's own header"
+                f"read by MNE back to header channel {probed['label']!r} at the "
+                "same position"
             )
-        probed_channels.append(probed)
+    labels = unique_channel_labels([p["label"] for p in probed_channels])
 
     gains = _channel_gains(raw, [p["dimension"] for p in probed_channels])
 
     channels: list[EdfFallbackChannel] = []
-    for i, (name, probed) in enumerate(zip(raw.ch_names, probed_channels, strict=True)):
+    for i, (label, probed) in enumerate(zip(labels, probed_channels, strict=True)):
         degenerate = probed["physical_min"] == probed["physical_max"]
         if degenerate:
             # The digital-to-physical slope is 0/0; the only value the scaling
@@ -462,7 +481,7 @@ def read_edf_tolerant(filepath: str, reason: str) -> EdfFallbackRecording:
             values = data[i] / gains[i]
         channels.append(
             EdfFallbackChannel(
-                label=name,
+                label=label,
                 data=values,
                 sample_frequency=sfreq,
                 physical_dimension=probed["dimension"] or "n/a",
