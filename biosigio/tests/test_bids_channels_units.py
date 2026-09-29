@@ -499,13 +499,17 @@ def test_a_blank_units_cell_is_skipped_and_logged_at_debug(tmp_path, caplog):
 
 
 def test_channels_missing_from_the_sidecar_are_logged_at_debug(tmp_path, caplog):
-    """A case-mismatched name column silently matches nothing; make it findable."""
+    """A name column that matches nothing (not even ignoring case) is findable.
+
+    A name differing only in case used to be the example here; it now matches
+    (see test_bids_channels_case.py), so the row differs by more than case.
+    """
     stem = "sub-01_task-rest"
     values = np.column_stack([SAMPLES_IN_MICROVOLTS, SAMPLES_IN_MICROVOLTS])
     vhdr = write_brainvision(
         tmp_path, stem, values, unit="µV", resolution=0.1, names=("EEG1", "EEG2")
     )
-    write_channels_tsv(tmp_path, stem, [("eeg1", "EEG", "uV")])  # wrong case
+    write_channels_tsv(tmp_path, stem, [("eeg-1", "EEG", "uV")])  # no such channel
     rec = Recording.from_file(str(vhdr), bids_channels="off")
 
     with caplog.at_level("DEBUG"):
