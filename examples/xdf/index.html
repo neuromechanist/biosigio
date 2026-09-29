@@ -2975,7 +2975,9 @@ rate first.</p>
 <h2 id="notes">Notes<a class="headerlink" href="#notes" title="Permanent link">&para;</a></h2>
 <ul>
 <li>Marker streams (string data) are not loaded as signal channels</li>
-<li>When multiple streams are loaded, channels are prefixed with stream names</li>
+<li>Channels keep their own labels and are not prefixed with the stream name;
+  when a label repeats, the first occurrence keeps it and later ones become <code>&lt;label&gt;_1</code>, <code>&lt;label&gt;_2</code>,
+  never a label another channel genuinely has (see <a href="../../formats/xdf/#repeated-channel-labels">Repeated channel labels</a>)</li>
 <li>Time indices are normalized to start at 0</li>
 <li>The <code>pyxdf</code> package is used internally for reading XDF files</li>
 </ul>

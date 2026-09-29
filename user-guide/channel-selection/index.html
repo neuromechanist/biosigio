@@ -2733,6 +2733,8 @@
 </code></pre></div>
 <p>The names can come in any iterable, not only a list:
 a tuple, a set, <code>rec.channels.keys()</code>, a numpy array, or a pandas <code>Index</code> or <code>Series</code>.
+The selected channels keep the order the iterable yields them in,
+so a set gives an arbitrary column order; pass a list (or <code>sorted(...)</code>) when the order matters.
 Each name may appear once: <code>select_channels(['EMG1', 'EMG1'])</code> raises <code>ValueError</code>,
 because a second copy of a column would leave the new recording's signals and channel table disagreeing.</p>
 <h2 id="selecting-channels-by-type">Selecting Channels by Type<a class="headerlink" href="#selecting-channels-by-type" title="Permanent link">&para;</a></h2>
