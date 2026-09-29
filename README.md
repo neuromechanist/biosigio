@@ -15,7 +15,16 @@ The documentation including installation instructions, examples, and API referen
 
 What changed in each release is in [CHANGELOG.md](https://github.com/neuromechanist/biosigio/blob/main/CHANGELOG.md).
 
-**Breaking in 1.2.10:** `Recording.select_channels` raises `ValueError` for a name listed twice, and inputs whose repeated channel labels collide with a label the file itself uses (or a `channels.tsv` that differs from the data file only in case) can import with different channel names, types or units than in 1.2.9; see the changelog.
+**Breaking in 1.2.10:** biosigio 1.2.10 is a patch release that contains breaking changes:
+`Recording.select_channels` raises `ValueError` for a name listed twice (and now accepts any iterable of names);
+the Parquet/Arrow importer raises `ValueError` for a Feather/Arrow table that repeats a column name;
+EDF/BDF export numbers labels that collide once truncated to 16 characters;
+XDF, neo and EEGLAB suffixes for repeated labels never take a label the file genuinely uses, so a label such as `Ch1_1` can now point at a different signal;
+a `channels.tsv` row matched to its channel case-insensitively now applies its type and unit, which can convert the signal;
+and, for anyone upgrading from before 1.2.9, `Recording.add_channel` still raises for a label that already exists (below).
+To adapt, de-duplicate `select_channels` arguments and re-check stores regenerated from files with repeated labels;
+to defer, pin `biosigio==1.2.9` (a `~=1.2.9` or `<1.3` pin takes 1.2.10 automatically).
+Details are in the [changelog](https://github.com/neuromechanist/biosigio/blob/main/CHANGELOG.md).
 
 **Breaking in 1.2.9:** `Recording.add_channel` raises `ValueError` for a label that already exists instead of silently replacing that channel; use `set_channel` to change metadata or assign `rec.signals[label]` to replace samples.
 
