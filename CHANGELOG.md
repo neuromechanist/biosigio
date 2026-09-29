@@ -93,6 +93,7 @@ to defer, pin `biosigio==1.2.9`, since a `~=1.2.9` or `<1.3` pin takes 1.2.10 au
 - `Recording.select_channels` accepts any iterable of names:
   a tuple or a set, which raised in 1.2.9, now select those channels,
   and a generator, which selected nothing, now selects its names.
+  Channels keep the order the iterable yields, so a set gives an arbitrary column order.
 - CSV: a repeated name in `channel_names` or `columns` raises `ValueError` naming it,
   instead of pandas' `Data must be 1-dimensional`.
 
