@@ -3,7 +3,7 @@ import os
 import wfdb
 
 from ..core.emg import Recording
-from ..exceptions import is_resource_exhaustion
+from ..exceptions import FileReadError, classify_read_error, is_resource_exhaustion
 
 # import numpy as np # Keep commented out until needed
 # from typing import List, Dict # Keep commented out until needed
@@ -46,7 +46,33 @@ class WFDBImporter(BaseImporter):
             # Read record data and header
             # physical=True ensures data is in physical units
             record = wfdb.rdrecord(record_name=record_name, sampfrom=0, sampto=None, physical=True)
+            # wfdb's writer refuses a repeated sig_name but its reader accepts one
+            # from a hand-edited or foreign header, and a Recording is keyed by
+            # label: suffix repeats as the EDF importer does, so every signal
+            # survives instead of one replacing another. Inside this try because
+            # a repeat that cannot be suffixed is a property of the file too.
+            labels, renames = unique_channel_labels(
+                list(record.sig_name), source="WFDB", filepath=filepath
+            )
+        except FileNotFoundError as fnf_e:
+            # The header exists (checked above), so rdrecord could not find the
+            # signal (.dat) file it names.
+            raise FileReadError(
+                f"Error reading WFDB record '{record_name}': Data file missing or unreadable ({fnf_e})"
+            ) from fnf_e
+        except Exception as e:
+            # Resource exhaustion is a host condition, not a file problem --
+            # propagate unchanged rather than reclassifying it as a permanent
+            # read failure (see biosigio.exceptions.is_resource_exhaustion).
+            if is_resource_exhaustion(e):
+                raise
+            # Everything raised while wfdb parses the record is about the file:
+            # wfdb reports a malformed header as HeaderSyntaxError (a ValueError),
+            # but also as a bare TypeError, IndexError or KeyError, and a
+            # truncated signal file as ValueError. Typed like every other importer.
+            raise classify_read_error(e, filepath) from e
 
+        try:
             # Create Recording object
             rec = Recording()
 
@@ -60,13 +86,7 @@ class WFDBImporter(BaseImporter):
             if record.comments:
                 rec.set_metadata("comments", "\n".join(record.comments))
 
-            # Add channels. wfdb's writer refuses a repeated sig_name but its
-            # reader accepts one from a hand-edited or foreign header, and a
-            # Recording is keyed by label: suffix repeats as the EDF importer
-            # does, so every signal survives instead of one replacing another.
-            labels, renames = unique_channel_labels(
-                list(record.sig_name), source="WFDB", filepath=filepath
-            )
+            # Add channels, under the de-duplicated labels (see above).
             if renames:
                 rec.set_metadata(DEDUPLICATED_LABELS_KEY, renames)
             for i, (sig_name, label) in enumerate(zip(record.sig_name, labels, strict=True)):
@@ -158,17 +178,11 @@ class WFDBImporter(BaseImporter):
 
             return rec
 
-        except FileNotFoundError as fnf_e:
-            # This might occur if rdrecord itself can't find the .dat file
-            # Re-raise as a ValueError indicating a read problem, not just missing header
-            raise ValueError(
-                f"Error reading WFDB record '{record_name}': Data file missing or unreadable ({fnf_e})"
-            ) from fnf_e
         except Exception as e:
-            # Resource exhaustion is a host condition, not a file problem --
-            # propagate unchanged rather than reclassifying it as a permanent
-            # read failure (see biosigio.exceptions.is_resource_exhaustion).
             if is_resource_exhaustion(e):
                 raise
-            # Catch any other exceptions during record/annotation reading
+            # Deliberately NOT classified: wfdb has already parsed the record, so
+            # a failure while building the Recording from it is a biosigIO bug,
+            # not a property of the file. It stays an untyped ValueError (which a
+            # caller may retry) rather than a typed, permanent file failure.
             raise ValueError(f"Error reading WFDB file '{filepath}': {str(e)}") from e
