@@ -458,6 +458,10 @@ class EEGLABImporter(BaseImporter):
             if not entry:  # null reference -- MATLAB's "no value" for this element
                 return None
             target = h5file[entry]
+            if target.attrs.get("MATLAB_empty"):
+                # MATLAB stores an empty `[]` as a uint64 dims dataset (e.g.
+                # [0, 0]) flagged MATLAB_empty; it is "no value", not chars.
+                return None
             arr = np.asarray(target[()])
             if arr.size == 0:
                 return None
@@ -536,14 +540,16 @@ class EEGLABImporter(BaseImporter):
                 # EEGLAB can also save the struct's fields FLAT at the HDF5
                 # root (no `EEG` group); the classic loadmat path already
                 # accepts that layout, so treat the root as the struct when
-                # it carries the core fields rather than calling it corrupt.
+                # it carries the core fields rather than calling it corrupt. `EEG`
+                # wins when both layouts are present.
                 if "EEG" in f:
                     eeg = f["EEG"]
-                elif all(key in f for key in ("nbchan", "srate", "data")):
+                elif all(key in f for key in ("nbchan", "srate", "pnts", "data")):
                     eeg = f
                 else:
                     raise ValueError(
-                        f"MATLAB v7.3 file is missing the top-level 'EEG' struct; "
+                        f"MATLAB v7.3 file has no top-level 'EEG' struct and no flat "
+                        f"nbchan/srate/pnts/data fields at the root; "
                         f"the file may be corrupt ({filepath})"
                     )
 

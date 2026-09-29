@@ -197,7 +197,23 @@ def _write_v73_set(
                     "type",
                     data=np.array([new_ref(text=t) for t in types], dtype=h5py.ref_dtype),
                 )
-            if x is not None:
+            if x == "empty":
+                # MATLAB stores an empty `[]` as a uint64 dims dataset flagged
+                # MATLAB_empty (real EEGLAB files do this for unset X/Y/Z).
+                def empty_ref():
+                    ref_counter[0] += 1
+                    ds = refs.create_dataset(
+                        f"e{ref_counter[0]}", data=np.array([0, 0], dtype=np.uint64)
+                    )
+                    ds.attrs["MATLAB_class"] = np.bytes_(b"double")
+                    ds.attrs["MATLAB_empty"] = np.uint8(1)
+                    return ds.ref
+
+                chanlocs.create_dataset(
+                    "X",
+                    data=np.array([empty_ref() for _ in labels], dtype=h5py.ref_dtype),
+                )
+            elif x is not None:
                 chanlocs.create_dataset(
                     "X",
                     data=np.array([new_ref(number=v) for v in x], dtype=h5py.ref_dtype),
@@ -382,6 +398,50 @@ def test_v73_flat_root_struct_companion_fdt_resolved(tmp_path):
     assert rec.signals.shape == (pnts, nbchan)
     for i, label in enumerate(rec.signals.columns):
         np.testing.assert_array_equal(rec.signals[label].to_numpy(), data[i])
+
+
+@pytest.mark.parametrize("flat", [False, True])
+def test_v73_matlab_empty_chanloc_field_is_no_value(tmp_path, flat):
+    """An empty `[]` chanlocs field (MATLAB_empty uint64 marker) is "no value".
+
+    Real EEGLAB files leave X/Y/Z empty when electrode positions are unset;
+    the marker used to be decoded as a NUL-character string and then failed
+    float conversion, making the whole file unreadable.
+    """
+    path = str(tmp_path / "empty_xyz.set")
+    labels = ["Fz", "Cz", "Pz"]
+    _write_v73_set(
+        path,
+        nbchan=3,
+        pnts=10,
+        srate=250.0,
+        data=np.arange(30, dtype=np.float32).reshape(3, 10),
+        labels=labels,
+        types=["EEG"] * 3,
+        x="empty",
+        flat=flat,
+    )
+    rec = EEGLABImporter().load(path)
+    assert list(rec.channels) == labels
+    assert rec.signals.shape == (10, 3)
+
+
+def test_v73_flat_root_without_pnts_is_not_accepted(tmp_path):
+    """The flat-root guard needs pnts too: nbchan/srate/data alone stay corrupt."""
+    path = str(tmp_path / "no_pnts.set")
+    inner_path = path + ".inner"
+    with h5py.File(inner_path, "w") as f:
+        f.create_dataset("nbchan", data=np.array([[2.0]]))
+        f.create_dataset("srate", data=np.array([[100.0]]))
+        f.create_dataset("data", data=np.zeros((4, 2), dtype=np.float32))
+    with open(inner_path, "rb") as fh:
+        body = fh.read()
+    os.remove(inner_path)
+    with open(path, "wb") as fh:
+        fh.write(_wrap_matlab_v73_header(body))
+
+    with pytest.raises(CorruptFileError):
+        EEGLABImporter().load(path)
 
 
 def test_v73_root_without_core_fields_raises_corrupt_file_error(tmp_path):
