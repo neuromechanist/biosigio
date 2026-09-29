@@ -117,4 +117,4 @@ import biosigio
 print(biosigio.__version__)
 ```
 
-You should see the version number (e.g., `1.2.9`) without any errors.
+You should see the version number (e.g., `1.2` or later) without any errors.
