@@ -13,6 +13,8 @@ The determination of the EDF/BDF format is based on the dynamic range of the dat
 
 The documentation including installation instructions, examples, and API reference is available at [https://neuromechanist.github.io/biosigio/](https://neuromechanist.github.io/biosigio/).
 
+What changed in each release is in [CHANGELOG.md](CHANGELOG.md).
+
 ## Features
 
 - Import biosignal recordings from many systems and archives:
