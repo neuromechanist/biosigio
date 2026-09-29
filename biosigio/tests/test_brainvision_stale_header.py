@@ -235,3 +235,16 @@ def test_lone_cr_header_is_patched_line_by_line(tmp_path):
         b"DataFile=old.eeg", f"DataFile={tmp_path / (STEM + '.eeg')}".encode()
     ).replace(b"MarkerFile=old.vmrk", f"MarkerFile={tmp_path / (STEM + '.vmrk')}".encode())
     assert patched == expected
+
+
+def test_unreadable_header_yields_original_without_chained_context(tmp_path):
+    """A header the resolver cannot read is handed to MNE unchanged, and an error
+    raised inside the block is not chained to the resolver's own OSError."""
+    missing = str(tmp_path / "absent.vhdr")
+    with pytest.raises(RuntimeError) as info:
+        with resolved_vhdr(missing) as used:
+            assert used == missing
+            raise RuntimeError("raised by the caller")
+    assert info.value.__context__ is None
+    with pytest.raises(Exception, match="absent"):
+        Recording.from_file(missing)
