@@ -77,6 +77,7 @@ truncated recording.
 from __future__ import annotations
 
 import os
+import re
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -402,6 +403,35 @@ def _events_from_mne_annotations(raw) -> pd.DataFrame:
     return events
 
 
+def _is_mne_name_for(name: str, label: str) -> bool:
+    """Whether ``name`` is what MNE calls a header channel labelled ``label``.
+
+    Either the label itself or MNE's exact rename of a repeated label,
+    ``<label>-<n>`` or ``<label>-<a..z>`` (``_unique_channel_names``). Any other
+    ``<label>-...`` name is a DIFFERENT channel that happens to share the prefix
+    (``A`` and ``A-B``), so a prefix test would accept a reordered pair.
+    """
+    return name == label or re.fullmatch(re.escape(label) + r"-(\d+|[a-z])", name) is not None
+
+
+def _check_channel_pairing(filepath: str, mne_names: list[str], header_labels: list[str]) -> None:
+    """Fail loud unless the n-th MNE channel is the n-th header channel.
+
+    Raises:
+        FileReadError: At the first position where the names do not pair (see
+            :func:`_is_mne_name_for`); attaching one row's scaling to another
+            row's data would be silently wrong.
+    """
+    from ..exceptions import FileReadError
+
+    for name, label in zip(mne_names, header_labels, strict=True):
+        if not _is_mne_name_for(name, label):
+            raise FileReadError(
+                f"{filepath}: fallback reader could not match channel {name!r} "
+                f"read by MNE back to header channel {label!r} at the same position"
+            )
+
+
 def read_edf_tolerant(filepath: str, reason: str) -> EdfFallbackRecording:
     """Recover an EDF/BDF file pyedflib refuses to open, in pyedflib-equivalent units.
 
@@ -457,16 +487,11 @@ def read_edf_tolerant(filepath: str, reason: str) -> EdfFallbackRecording:
     probed_channels = [ch for ch in probe.channels if ch["label"] not in _ANNOTATION_LABELS]
     if len(probed_channels) != len(raw.ch_names):
         raise FileReadError(
-            f"{filepath}: fallback reader read {len(raw.ch_names)} channels but the "
-            f"file's own header declares {len(probed_channels)} signal channels"
+            f"{filepath}: fallback reader (MNE {mne.__version__}) read "
+            f"{len(raw.ch_names)} channels but the file's own header declares "
+            f"{len(probed_channels)} signal channels"
         )
-    for name, probed in zip(raw.ch_names, probed_channels, strict=True):
-        if name != probed["label"] and not name.startswith(f"{probed['label']}-"):
-            raise FileReadError(
-                f"{filepath}: fallback reader could not match channel {name!r} "
-                f"read by MNE back to header channel {probed['label']!r} at the "
-                "same position"
-            )
+    _check_channel_pairing(filepath, list(raw.ch_names), [p["label"] for p in probed_channels])
     labels, renamed = unique_channel_labels(
         [p["label"] for p in probed_channels], filepath=filepath
     )
