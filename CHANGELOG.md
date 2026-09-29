@@ -12,6 +12,25 @@ which keep the full notes; releases older than 1.1.0 are listed there only.
 
 ## [Unreleased]
 
+### Breaking
+
+- `Recording.select_channels` raises `ValueError` when a name is listed twice,
+  instead of returning a recording whose signal frame has the column twice and whose channel table has it once.
+  Any iterable of names that worked before still does (a list, tuple, set, dict keys, numpy array, pandas `Index` or `Series`).
+- The Parquet/Arrow importer raises `ValueError` for a table that repeats a signal column name
+  instead of building a recording with two columns under one label.
+  Parquet cannot read such a file back, so only an edited Feather/Arrow file reaches this.
+- For inputs whose repeated labels collide with a label the file itself uses
+  (XDF streams `[Ch1, Ch1]` and `[Ch1_1]`, an EEGLAB `Fz, Fz, Fz_2`, neo streams that repeat `x` and `x_0`),
+  a label such as `Ch1_1` now points at a different signal than in 1.2.9:
+  it is the channel really named `Ch1_1`, where 1.2.9 gave that label to the copy of `Ch1`.
+  A Zarr store regenerated from such a file therefore swaps data under an existing channel name.
+  Inputs without such a collision import exactly as before.
+- `apply_channels_tsv` and `apply_channels_tsv_to_stream` now apply a sidecar row that differs from its channel only in case
+  (see Fixed, [#136](https://github.com/neuromechanist/biosigio/issues/136)).
+  In 1.2.9 such a row was silently skipped; now its type and unit are applied, and a unit that differs from the data file's CONVERTS the signal,
+  so a store regenerated from such a dataset can differ in channel types, units and values from one published before.
+
 ### Fixed
 
 - XDF: a channel whose label repeats another's is always kept.
@@ -26,36 +45,36 @@ which keep the full notes; releases older than 1.1.0 are listed there only.
 - EEGLAB (classic and v7.3): a repeated label's `_2`, `_3` suffix never takes a label the file itself uses,
   so `Fz, Fz, Fz_2` imports as `Fz, Fz_3, Fz_2` instead of giving the second `Fz` the genuine `Fz_2`'s label
   and pushing that channel to `Fz_2_2`.
-  No channel was dropped before; a `channels.tsv` row for `Fz_2` described the wrong one.
-  A check before the channels are written makes a repeated label an error rather than an overwrite
+  No channel was dropped before; a `channels.tsv` row for `Fz_2` described the wrong one
   ([#134](https://github.com/neuromechanist/biosigio/issues/134)).
 - neo: the same rule for names repeated across merged streams (`x_0`, `x_0_1`, `x_0_0` rather than `x_0`, `x_0_0`, `x_0_0_0`).
-- Delsys Trigno: a file whose `Label:` lines repeat a label raises `ValueError`
-  instead of importing only the first of those channels.
+- Delsys Trigno: a file whose `Label:` lines repeat a label keeps every channel,
+  where 1.2.9 imported only the first column under that label.
+  The n-th column headed with the label takes the n-th `Label:` line's rate and unit;
+  later occurrences are suffixed `_1`, `_2`, ... (never onto a label the file uses) and logged.
+  Files with unique labels, which is every file Trigno writes, import exactly as before.
 - EDF/BDF export: labels that are no longer unique once truncated to the 16-character field
   (all channels of one Trigno sensor, for example) are numbered within the field (`Mini sensor 10-0`, `Mini sensor 10-1`)
   with a warning, instead of being written under one repeated label.
-  The `_channels.tsv` sidecar now names each channel by the label written to the file,
-  so it matches on re-import; it used to carry the full label, which a truncated channel never matched.
+  In the `_channels.tsv` sidecar, only those numbered channels are named by the label written to the file,
+  so their rows match on re-import; a channel that is truncated but stays unique keeps its full label there, as in 1.2.9.
 - `apply_channels_tsv` and `apply_channels_tsv_to_stream` fall back to a case-insensitive match
   for a row that matches no channel exactly, when exactly one channel fits, no row names that channel exactly
   and no other row folds to it,
   so a sidecar that writes `Fp1-F7` for an EDF header's `FP1-F7` applies its type and unit.
+  Case is compared with full Unicode case folding (`ß` matches `ss`) and without Unicode normalization (NFC and NFD spellings differ).
   The match is logged at info level and listed in the `channels_tsv_units` report as `matched_case_insensitive`,
   `{sidecar_name: channel_label}`, a key present only when such a match happened.
   An ambiguous row is left unapplied with a warning
   ([#136](https://github.com/neuromechanist/biosigio/issues/136)).
-- `Recording.select_channels` raises `ValueError` when a name is listed twice,
-  instead of returning a recording whose signal frame has the column twice and whose channel table has it once.
-- The Parquet/Arrow importer raises `ValueError` for a table that repeats a signal column name
-  instead of building a recording with two columns under one label.
 - CSV: a repeated name in `channel_names` or `columns` raises `ValueError` naming it,
   instead of pandas' `Data must be 1-dimensional`.
 
 ### Changed
 
-- The XDF, EEGLAB and neo importers record their renames under `channel_labels_deduplicated`
-  (`{new_label: original_label}`), as the EDF/BDF, WFDB and Zarr importers already did.
+- The XDF, EEGLAB, neo and Delsys Trigno importers now record their renames under `channel_labels_deduplicated`
+  (`{new_label: original_label}`), as the EDF/BDF, WFDB and Zarr importers already did,
+  so a store regenerated from a file with repeated labels carries this metadata key where one published before did not.
   The rule they share is `biosigio.importers._labels.suffix_repeated_labels`:
   the first occurrence keeps its label and later ones are numbered, each format keeping its own separator and first number.
 
