@@ -788,8 +788,24 @@ def test_pairing_accepts_exactly_mnes_rename_forms():
     from biosigio.importers._edf_tolerant import _check_channel_pairing
 
     _check_channel_pairing(
-        "f.edf", ["A-0", "A-B", "A-1", "A-a", "C-12"], ["A", "A-B", "A", "A", "C"]
+        "f.edf",
+        ["A-0", "A-B", "A-1", "A-a", "C-12", "C-13"],
+        ["A", "A-B", "A", "A", "C", "C"],
     )
+
+
+def test_suffix_is_accepted_only_for_a_repeated_label():
+    """MNE renames only labels that repeat, so a suffixed name paired with a
+    UNIQUE header label is a different channel (header ``A`` vs MNE ``A-b``)."""
+    from biosigio.importers._edf_tolerant import _check_channel_pairing, _is_mne_name_for
+
+    assert _is_mne_name_for("A", "A", repeated=False)
+    assert not _is_mne_name_for("A-b", "A", repeated=False)
+    assert not _is_mne_name_for("A-0", "A", repeated=False)
+    assert _is_mne_name_for("A-b", "A", repeated=True)
+    assert _is_mne_name_for("A-0", "A", repeated=True)
+    with pytest.raises(FileReadError, match=re.escape("could not match channel 'A-b'")):
+        _check_channel_pairing("f.edf", ["A-b", "B"], ["A", "B"])
 
 
 @pytest.mark.parametrize(
@@ -798,10 +814,12 @@ def test_pairing_accepts_exactly_mnes_rename_forms():
         # A reordered pair: MNE's "A-B" sits where the header has "A". A prefix
         # test accepted it and would have swapped the two rows' scaling.
         (["A-B", "A"], ["A", "A-B"], "A-B"),
-        (["A-0x"], ["A"], "A-0x"),  # not a running number or a single letter
-        (["A-ab"], ["A"], "A-ab"),
-        (["A0"], ["A"], "A0"),
-        (["a.b-0"], ["a+b"], "a.b-0"),  # the label is matched literally, not as a regex
+        # Repeated labels, so only the suffix's form is under test.
+        (["A-0x", "A"], ["A", "A"], "A-0x"),  # not a running number or a single letter
+        (["A-ab", "A"], ["A", "A"], "A-ab"),
+        (["A0", "A"], ["A", "A"], "A0"),
+        # The label is matched literally, not as a regex.
+        (["a.b-0", "a+b"], ["a+b", "a+b"], "a.b-0"),
     ],
 )
 def test_pairing_rejects_anything_else(mne_names, header_labels, bad):
