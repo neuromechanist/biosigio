@@ -48,8 +48,14 @@ jobs:
           echo "No tag for this run ($EVENT_NAME on $REF_TYPE $REF_NAME); skipping version check."
           exit 0
         fi
-        expected="${tag#v}"
-        source_version=$(python3 -c "import runpy; print(runpy.run_path('biosigio/version.py')['__version__'])")
+        # Compare PEP 440-normalized versions: dist filenames carry the
+        # normalized form, so a tag like v1.2.9-rc1 must equal 1.2.9rc1.
+        norm() {
+          uv run python -c 'import sys; from packaging.version import Version; print(Version(sys.argv[1]))' "$1"
+        }
+        expected=$(norm "${tag#v}") || { echo "::error::Tag $tag is not a valid version"; exit 1; }
+        raw_version=$(python3 -c "import runpy; print(runpy.run_path('biosigio/version.py')['__version__'])")
+        source_version=$(norm "$raw_version") || { echo "::error::biosigio/version.py has an invalid version ($raw_version)"; exit 1; }
         status=0
         if [ "$source_version" != "$expected" ]; then
           echo "::error::Tag $tag does not match biosigio/version.py ($source_version)"
@@ -59,7 +65,7 @@ jobs:
           [ -e "$dist_file" ] || { echo "::error::Missing built file matching $dist_file"; status=1; continue; }
           name=$(basename "$dist_file")
           name="${name%.tar.gz}"
-          dist_version=$(echo "$name" | cut -d- -f2)
+          dist_version=$(norm "$(echo "$name" | cut -d- -f2)") || { echo "::error::Invalid version in $(basename "$dist_file")"; status=1; continue; }
           if [ "$dist_version" != "$expected" ]; then
             echo "::error::Tag $tag does not match built $(basename "$dist_file") ($dist_version)"
             status=1
