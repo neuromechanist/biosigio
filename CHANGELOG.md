@@ -107,8 +107,11 @@ which keep the full notes; releases older than 1.1.0 are listed there only.
   and a channel given the default label for an empty label are counted,
   a missing or zero EEGLAB `srate` says that 1000 Hz is assumed,
   a BrainVision header that cannot be read is logged with its errno,
-  and an EDF/BDF file that only the tolerant reader could open names the missing `meg` extra
-  (the original pyedflib error is now chained to the `ImportError`).
+  and an EDF/BDF file that only the tolerant reader could open logs that the `meg` extra is missing.
+- EDF/BDF: a file that only the tolerant reader can open raises `ImportError` when MNE (the `meg` extra) is missing,
+  instead of the pyedflib error typed as `CorruptFileError` or `FileReadError`.
+  The message names the `meg` extra, and the pyedflib error is its `__cause__`.
+  A missing dependency is the environment, not the file, and the streaming Zarr source already raised `ImportError` here.
 
 ### Known issues
 
