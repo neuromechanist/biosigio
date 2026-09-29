@@ -1,5 +1,7 @@
 import logging
 import os
+from collections import Counter
+from collections.abc import Iterable
 from typing import Any, Literal
 
 import numpy as np
@@ -317,7 +319,7 @@ class Recording:
 
     def select_channels(
         self,
-        channels: str | list[str] | None = None,
+        channels: str | Iterable[str] | None = None,
         channel_type: str | None = None,
         inplace: bool = False,
         *,
@@ -327,8 +329,10 @@ class Recording:
         Select specific channels from the data and return a new Recording object.
 
         Args:
-            channels: Channel name or list of channel names to select. If None and
-                    channel_type is specified, selects all channels of that type.
+            channels: Channel name, or an iterable of channel names (list, tuple,
+                    dict keys, numpy array, pandas Index or Series), to select. If
+                    None and channel_type is specified, selects all channels of
+                    that type.
             channel_type: Type of channels to select ('EMG', 'ACC', 'GYRO', etc.).
                         If specified with channels, filters the selection to only
                         channels of this type.
@@ -372,10 +376,15 @@ class Recording:
         if channels is None:
             raise ValueError("Specify at least one of: channels, channel_type, or modality.")
 
+        # Any iterable of names is accepted (a list, tuple, dict keys, a numpy
+        # array, a pandas Index or Series); materialize it once so it can be
+        # counted and iterated again below.
+        channels = list(channels)
+
         # A name listed twice would copy its column twice into the new signal
         # frame while the channel dict keeps one entry, leaving a Recording whose
         # signals and channels disagree.
-        repeated = [ch for ch in dict.fromkeys(channels) if channels.count(ch) > 1]
+        repeated = [str(ch) for ch, n in Counter(channels).items() if n > 1]
         if repeated:
             raise ValueError(f"Channels listed more than once: {repeated}")
 

@@ -176,6 +176,60 @@ def test_select_channels_refuses_a_name_listed_twice(tmp_path):
     assert list(subset.signals.columns) == list(subset.channels) == ["C4", "C3"]
 
 
+def _three_channel_recording(tmp_path) -> Recording:
+    path = _write_xdf(tmp_path / "sel3.xdf", [("Amp", ["C3", "C4", "Cz"], _block(0.0, 3))])
+    return XDFImporter().load(path)
+
+
+@pytest.mark.parametrize(
+    "make_selection",
+    [
+        pytest.param(lambda rec: ["C3", "Cz"], id="list"),
+        pytest.param(lambda rec: ("C3", "Cz"), id="tuple"),
+        pytest.param(lambda rec: {"C3": 0, "Cz": 1}.keys(), id="dict_keys"),
+        pytest.param(lambda rec: np.array(["C3", "Cz"]), id="ndarray"),
+        pytest.param(lambda rec: pd.Index(["C3", "Cz"]), id="pd.Index"),
+        pytest.param(lambda rec: pd.Series(["C3", "Cz"]), id="pd.Series"),
+        pytest.param(lambda rec: (name for name in ["C3", "Cz"]), id="generator"),
+    ],
+)
+def test_select_channels_accepts_any_iterable_of_names(tmp_path, make_selection):
+    """Iterables that selected channels in 1.2.9 still do, in the order given."""
+    rec = _three_channel_recording(tmp_path)
+    subset = rec.select_channels(make_selection(rec))
+    assert list(subset.signals.columns) == list(subset.channels) == ["C3", "Cz"]
+    np.testing.assert_array_equal(subset.signals["Cz"].to_numpy(), rec.signals["Cz"].to_numpy())
+
+
+def test_select_channels_accepts_the_recordings_own_keys(tmp_path):
+    rec = _three_channel_recording(tmp_path)
+    subset = rec.select_channels(rec.channels.keys())
+    assert list(subset.channels) == ["C3", "C4", "Cz"]
+    subset = rec.select_channels(rec.signals.columns)
+    assert list(subset.signals.columns) == ["C3", "C4", "Cz"]
+
+
+def test_select_channels_accepts_a_set(tmp_path):
+    rec = _three_channel_recording(tmp_path)
+    subset = rec.select_channels({"C3", "Cz"})
+    assert sorted(subset.channels) == sorted(subset.signals.columns) == ["C3", "Cz"]
+
+
+@pytest.mark.parametrize(
+    "selection",
+    [
+        pytest.param(["Cz", "C3", "Cz"], id="list"),
+        pytest.param(np.array(["Cz", "C3", "Cz"]), id="ndarray"),
+        pytest.param(pd.Index(["Cz", "C3", "Cz"]), id="pd.Index"),
+        pytest.param(pd.Series(["Cz", "C3", "Cz"]), id="pd.Series"),
+    ],
+)
+def test_select_channels_refuses_a_repeat_in_any_iterable(tmp_path, selection):
+    rec = _three_channel_recording(tmp_path)
+    with pytest.raises(ValueError, match=r"more than once: \['Cz'\]"):
+        rec.select_channels(selection)
+
+
 # --- CSV ----------------------------------------------------------------------
 
 
