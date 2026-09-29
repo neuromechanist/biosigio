@@ -31,7 +31,8 @@ import pytest
 pytest.importorskip("mne", reason="the tolerant EDF/BDF fallback requires the 'meg' extra (mne)")
 
 from biosigio import Recording  # noqa: E402
-from biosigio.exceptions import CorruptFileError, FileReadError  # noqa: E402
+from biosigio.exceptions import BiosigIOError, CorruptFileError, FileReadError  # noqa: E402
+from biosigio.exporters.zarr_stream import _open_stream_source  # noqa: E402
 from biosigio.importers._edf_tolerant import (  # noqa: E402
     DEGENERATE_PHYSICAL_RANGE,
     DISCONTINUOUS_DATARECORDS,
@@ -518,10 +519,12 @@ def test_check_not_truncated_direct(tmp_path):
         _check_not_truncated(path, probe, probe.number_of_datarecords)
 
 
-def test_mne_missing_degrades_to_original_error(tmp_path, monkeypatch, caplog):
+def test_mne_missing_raises_import_error_naming_the_extra(tmp_path, monkeypatch, caplog):
     """If MNE (the `meg` extra) is not installed, loading a recoverable file
-    must degrade to the SAME error pyedflib itself raised -- not crash with a
-    raw ImportError, and not claim success it cannot deliver."""
+    raises an ImportError naming the extra, as the streaming source does: a
+    missing dependency is this environment, not the file, so it must not become
+    a typed (permanent) read failure, and must not claim success it cannot
+    deliver. Only the dependency's absence is simulated."""
     import biosigio.importers._mne_common as mne_common
 
     def _no_mne():
@@ -536,15 +539,20 @@ def test_mne_missing_degrades_to_original_error(tmp_path, monkeypatch, caplog):
     _patch_signal_field(path, 1, "physical_max", b"-100")
 
     with caplog.at_level("WARNING", logger="biosigio.importers.edf"):
-        with pytest.raises(CorruptFileError) as info:
+        with pytest.raises(ImportError, match="'meg' extra") as info:
             Recording.from_file(path, importer="edf")
 
-    # The install hint is not lost: the pyedflib error is chained to the
-    # ImportError, and the log names the missing extra.
+    # The pyedflib error the fallback would have recovered from is the cause,
+    # and the log names the missing extra too.
+    assert not isinstance(info.value, BiosigIOError)
+    assert path in str(info.value)
     original = info.value.__cause__
-    assert isinstance(original, OSError)
-    assert isinstance(original.__cause__, ImportError)
+    assert isinstance(original, OSError) and "compliant" in str(original).lower()
     assert "'meg' extra" in caplog.text and path in caplog.text
+
+    # The streaming source raises the same kind of error, untyped.
+    with pytest.raises(ImportError):
+        _open_stream_source(path, None)
 
 
 # --- probe_edf_header -----------------------------------------------------------

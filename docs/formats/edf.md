@@ -74,8 +74,9 @@ identical to what `pyedflib` would report for the same channel. A channel with
 a degenerate `physical_min == physical_max` has no defined scale, so its output
 is the constant `physical_min` (== `physical_max`) throughout -- exactly zero in
 the common grounded/referential case. Recovering this way requires the `meg`
-extra (MNE); without it, the file still raises the same
-`CorruptFileError`/`FileReadError` it did before.
+extra (MNE); without it, such a file raises an `ImportError` that names the
+`meg` extra, with pyedflib's own error as its `__cause__`. It is deliberately
+not a `BiosigIOError`: installing the extra makes the same file readable.
 
 A channel MNE auto-detects as a trigger/status channel (by default, one
 literally named `"Status"` or `"Trigger"`) is read with that detection
