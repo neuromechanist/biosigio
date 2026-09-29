@@ -202,6 +202,8 @@ rec.to_edf('emg_export.edf', verify=True)
 ## Notes
 
 - Marker streams (string data) are not loaded as signal channels
-- When multiple streams are loaded, channels are prefixed with stream names
+- Channels keep their own labels and are not prefixed with the stream name;
+  when a label repeats, the first occurrence keeps it and later ones become `<label>_1`, `<label>_2`,
+  never a label another channel genuinely has (see [Repeated channel labels](../formats/xdf.md#repeated-channel-labels))
 - Time indices are normalized to start at 0
 - The `pyxdf` package is used internally for reading XDF files

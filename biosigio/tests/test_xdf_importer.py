@@ -142,7 +142,7 @@ def test_xdf_importer_channel_labels():
     importer = XDFImporter()
     rec = importer.load(SAMPLE_XDF_PATH)
 
-    # Check channel names contain stream name prefix
+    # The sample stream has no channel labels, so each is named <stream name>_Ch<n>
     channel_names = list(rec.channels.keys())
     assert all("obci_neeg1" in name for name in channel_names)
 
