@@ -26,6 +26,10 @@ rec = Recording.from_file('path/to/your/record.hea')
 
 biosigIO uses the `wfdb` library (PyPI package `wfdb`) internally. It ships as a core dependency, so no separate installation is required.
 
+## Repeated Signal Names
+
+The `wfdb` writer refuses a repeated signal name, but its reader accepts one from a hand-edited or foreign header. A `Recording` is keyed by channel label, so repeated names get the same running suffixes as repeated EDF labels (`II-0`, `II-1`; see [EDF repeated channel labels](edf.md#repeated-channel-labels)) and a warning names them. Every signal is kept.
+
 ## Annotation Handling
 
 If an annotation file (e.g., `record.atr`) exists in the same directory and shares the same base name as the header file, the `WFDBImporter` will **automatically load** these annotations.

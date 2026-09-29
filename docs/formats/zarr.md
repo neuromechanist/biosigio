@@ -169,6 +169,8 @@ rec = Recording.from_file('recording.zarr', importer='zarr')
 
 The importer reads level 0 of one group, applies the `physical = digital * scale + offset` dequantization, and restores channels, events, and recording metadata. The view pyramid is render-only and is never read here.
 
+A store published by the streaming exporter before repeated EDF labels were suffixed can list the same `label` twice in a group. The importer reads it anyway, suffixing the repeats the same way the EDF importer does (`T8-P8-0`, `T8-P8-1`; see [EDF repeated channel labels](edf.md#repeated-channel-labels)) and warning, so no channel is dropped. Regenerating such a store from its source EDF writes the suffixed labels into the store itself, which changes its channel names.
+
 Because the groups in a store can sit at different rates that cannot share biosigIO's single time grid, the importer reconstructs one group at a time. When a store holds a single group it is selected automatically; when it holds more than one, pass the `group=` selector by group name. Calling `from_file` on a multi-group store without `group=` raises an error that lists the available groups:
 
 ```python
