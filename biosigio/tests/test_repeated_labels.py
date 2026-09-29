@@ -14,6 +14,7 @@ import numpy as np
 import pytest
 
 from biosigio.importers._labels import DEDUPLICATED_LABELS_KEY, suffix_repeated_labels
+from biosigio.importers.csv import CSVImporter
 from biosigio.importers.xdf import XDFImporter
 
 
@@ -170,3 +171,30 @@ def test_select_channels_refuses_a_name_listed_twice(tmp_path):
         rec.select_channels(["C3", "C4", "C3"])
     subset = rec.select_channels(["C4", "C3"])
     assert list(subset.signals.columns) == list(subset.channels) == ["C4", "C3"]
+
+
+# --- CSV ----------------------------------------------------------------------
+
+
+def _write_csv(path, header: str) -> str:
+    rows = "\n".join(f"{i},{i + 10},{i + 20}" for i in (3, 1, 2))
+    path.write_text(f"{header}\n{rows}\n")
+    return str(path)
+
+
+def test_csv_repeated_channel_names_are_refused_by_name(tmp_path):
+    path = _write_csv(tmp_path / "x.csv", "a,b,c")
+    with pytest.raises(ValueError, match=r"must be unique; repeated: \['A'\]"):
+        CSVImporter().load(
+            path, force_generic=True, sample_frequency=100, channel_names=["A", "A", "B"]
+        )
+    with pytest.raises(ValueError, match=r"must be unique; repeated: \['a'\]"):
+        CSVImporter().load(path, force_generic=True, sample_frequency=100, columns=["a", "a"])
+
+
+def test_csv_repeated_header_keeps_every_column(tmp_path):
+    """pandas renames a repeated header, so every column still becomes a channel."""
+    path = _write_csv(tmp_path / "h.csv", "a,a,a")
+    rec = CSVImporter().load(path, force_generic=True, sample_frequency=100)
+    assert len(rec.channels) == 3
+    assert [rec.signals[c].iloc[0] for c in rec.signals.columns] == [3, 13, 23]
