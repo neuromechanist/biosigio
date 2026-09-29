@@ -83,6 +83,27 @@ A per-file summary lands in `rec.metadata["channels_tsv_units"]`:
 `units_column_present` separates "the sidecar declared no units at all" from
 "the units were already correct", which the counters alone cannot.
 
+### Matching rows to channels
+
+A row describes the channel whose label equals its `name` exactly.
+A row with no exact match falls back to ignoring case, but only when that is unambiguous:
+exactly one channel label equals the row's name ignoring case,
+no row names that channel exactly,
+and no other unmatched row names it ignoring case.
+This covers a sidecar that spells a label differently from the data file,
+such as `Fp1-F7` for an EDF header's `FP1-F7`, as in CHB-MIT.
+The channel keeps the data file's label; the match is logged at info level
+and listed in the summary as `matched_case_insensitive`, `{sidecar_name: channel_label}`:
+
+```python
+{"converted": 0, "relabelled": 0, "kept_importer_unit": 0, "units_column_present": True,
+ "matched_case_insensitive": {"Fp1-F7": "FP1-F7"}}
+```
+
+The key is present only when such a match happened.
+An ambiguous row, such as `fp1-f7` against channels `FP1-F7` and `Fp1-F7`, is left unapplied with a warning.
+The in-memory and streaming paths apply the same rule.
+
 ## Module Documentation
 
 ::: biosigio.bids

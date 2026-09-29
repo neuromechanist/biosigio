@@ -10,6 +10,55 @@ Entries before 1.2.9 are condensed from the
 [GitHub Releases](https://github.com/neuromechanist/biosigio/releases),
 which keep the full notes; releases older than 1.1.0 are listed there only.
 
+## [Unreleased]
+
+### Fixed
+
+- XDF: a channel whose label repeats another's is always kept.
+  Two streams that share a name now each keep their `{stream_name}_LSL_timestamps` channel (the second is suffixed `_1`),
+  where one of them was dropped,
+  and a timestamp channel no longer overwrites a data channel that carries the same name.
+  The existing `_1`, `_2` suffixes for repeated labels are kept, so no channel that imported under its own label is renamed,
+  but a suffix now never takes a label some stream really uses:
+  streams `[Ch1, Ch1]` and `[Ch1_1]` import as `Ch1`, `Ch1_2`, `Ch1_1`, where the genuine `Ch1_1` became `Ch1_1_1`.
+  The renames are logged with their stream names
+  ([#134](https://github.com/neuromechanist/biosigio/issues/134)).
+- EEGLAB (classic and v7.3): a repeated label's `_2`, `_3` suffix never takes a label the file itself uses,
+  so `Fz, Fz, Fz_2` imports as `Fz, Fz_3, Fz_2` instead of giving the second `Fz` the genuine `Fz_2`'s label
+  and pushing that channel to `Fz_2_2`.
+  No channel was dropped before; a `channels.tsv` row for `Fz_2` described the wrong one.
+  A check before the channels are written makes a repeated label an error rather than an overwrite
+  ([#134](https://github.com/neuromechanist/biosigio/issues/134)).
+- neo: the same rule for names repeated across merged streams (`x_0`, `x_0_1`, `x_0_0` rather than `x_0`, `x_0_0`, `x_0_0_0`).
+- Delsys Trigno: a file whose `Label:` lines repeat a label raises `ValueError`
+  instead of importing only the first of those channels.
+- EDF/BDF export: labels that are no longer unique once truncated to the 16-character field
+  (all channels of one Trigno sensor, for example) are numbered within the field (`Mini sensor 10-0`, `Mini sensor 10-1`)
+  with a warning, instead of being written under one repeated label.
+  The `_channels.tsv` sidecar now names each channel by the label written to the file,
+  so it matches on re-import; it used to carry the full label, which a truncated channel never matched.
+- `apply_channels_tsv` and `apply_channels_tsv_to_stream` fall back to a case-insensitive match
+  for a row that matches no channel exactly, when exactly one channel fits, no row names that channel exactly
+  and no other row folds to it,
+  so a sidecar that writes `Fp1-F7` for an EDF header's `FP1-F7` applies its type and unit.
+  The match is logged at info level and listed in the `channels_tsv_units` report as `matched_case_insensitive`,
+  `{sidecar_name: channel_label}`, a key present only when such a match happened.
+  An ambiguous row is left unapplied with a warning
+  ([#136](https://github.com/neuromechanist/biosigio/issues/136)).
+- `Recording.select_channels` raises `ValueError` when a name is listed twice,
+  instead of returning a recording whose signal frame has the column twice and whose channel table has it once.
+- The Parquet/Arrow importer raises `ValueError` for a table that repeats a signal column name
+  instead of building a recording with two columns under one label.
+- CSV: a repeated name in `channel_names` or `columns` raises `ValueError` naming it,
+  instead of pandas' `Data must be 1-dimensional`.
+
+### Changed
+
+- The XDF, EEGLAB and neo importers record their renames under `channel_labels_deduplicated`
+  (`{new_label: original_label}`), as the EDF/BDF, WFDB and Zarr importers already did.
+  The rule they share is `biosigio.importers._labels.suffix_repeated_labels`:
+  the first occurrence keeps its label and later ones are numbered, each format keeping its own separator and first number.
+
 ## [1.2.9] - 2026-09-29
 
 ### Breaking
@@ -279,6 +328,7 @@ First release since 1.1.3; the internal 1.1.4 and 1.1.5 bumps are folded in.
 - EEGLAB `.set` files with the signal matrix in a sibling `.fdt` file (#94).
 - `bids.apply_events_tsv` to load a BIDS `_events.tsv` into `rec.events`.
 
+[Unreleased]: https://github.com/neuromechanist/biosigio/compare/v1.2.9...HEAD
 [1.2.9]: https://github.com/neuromechanist/biosigio/compare/v1.2.8...v1.2.9
 [1.2.8]: https://github.com/neuromechanist/biosigio/compare/v1.2.7...v1.2.8
 [1.2.7]: https://github.com/neuromechanist/biosigio/compare/v1.2.6...v1.2.7

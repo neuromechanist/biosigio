@@ -33,7 +33,7 @@ python-neo models a recording as a Block containing one or more Segments (trials
 
 biosigIO holds a single time grid, and that grid carries exactly one sampling rate. This leads to a key model for how streams are mapped:
 
-- **Same-rate streams merge.** If a file contains several streams that share the same sampling rate (and the same length and start time), they are merged onto one time grid as a single `Recording`. Channel labels are kept distinct, so a name that would collide across streams is disambiguated as `name_0`, `name_1`, and so on.
+- **Same-rate streams merge.** If a file contains several streams that share the same sampling rate (and the same length and start time), they are merged onto one time grid as a single `Recording`. Channel labels are kept distinct, so a name that would collide across streams is disambiguated as `name_0`, `name_1`, and so on. The first occurrence keeps its name, a suffix never takes a name some stream really uses, and the renames are logged and recorded in the metadata as `channel_labels_deduplicated` (`{new_label: original_label}`).
 - **Multi-rate files require a selector.** If a file holds streams at more than one sampling rate, biosigIO does not silently collapse them to a single rate. Instead it raises a clear error that lists every stream with its index, name, rate, and channel count, and asks you to pass `stream=` to choose one. The same applies when same-rate streams have differing lengths or start times that cannot share one grid.
 
 ## Loading Data

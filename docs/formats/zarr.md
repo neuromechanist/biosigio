@@ -147,7 +147,7 @@ That parity is the contract: one recording and one sidecar produce the same `uni
 Two attributes record what the sidecar did:
 
 - `channels[].bids_unit` on a channel whose declared unit was recorded rather than adopted (a discrete trigger channel, or a unit that is not convertible from the importer's), so the BIDS claim survives without being asserted over values that contradict it.
-- `channels_tsv_units` on the root group, the per-file summary (`converted`, `relabelled`, `kept_importer_unit`, `units_column_present`). It is absent when no sidecar was applied.
+- `channels_tsv_units` on the root group, the per-file summary (`converted`, `relabelled`, `kept_importer_unit`, `units_column_present`, and `matched_case_insensitive` when a sidecar row matched a channel only by ignoring case). It is absent when no sidecar was applied.
 
 Both are additive, so `format_version` stays at 2.
 
