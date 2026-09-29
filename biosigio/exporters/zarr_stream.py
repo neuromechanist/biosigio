@@ -54,6 +54,7 @@ import contextlib
 import datetime as _dt
 import os
 import tempfile
+from collections.abc import Callable
 from typing import TYPE_CHECKING, cast
 
 import numpy as np
@@ -173,6 +174,10 @@ class _MneSource:
         raw=None,
         extra_metadata: dict | None = None,
     ):
+        # Called once by close(): a .vhdr read through a patched header copy
+        # releases its temporary directory there, since MNE opens the staged
+        # data file on every lazy read. Set by _open_stream_source.
+        self._on_close: Callable[[], object] | None = None
         if raw is None:
             mne = require_mne()
             raw = mne.io.read_raw(filepath, preload=False, verbose="ERROR")
@@ -204,6 +209,9 @@ class _MneSource:
         # asking whether a source was released must get the same answer whichever
         # one it holds.
         self._closed = True
+        on_close, self._on_close = self._on_close, None
+        if on_close is not None:
+            on_close()
 
     @property
     def closed(self) -> bool:
@@ -373,7 +381,9 @@ def _open_stream_source(filepath: str, force_modality: str | None):
         # the in-memory importer (BrainVisionImporter.load): the resolver stays
         # OUTSIDE the try, so a host failure writing its temp copy propagates raw,
         # while a reader failure is typed (a corrupt header is terminal, not
-        # retried forever) and names the real header rather than the temp copy.
+        # retried forever) and names the dataset's files rather than the temp copy.
+        # The resolver's temporary directory holds the staged data file the lazy
+        # Raw reads from, so it lives until the source is closed, not the block.
         from ..importers.brainvision import (
             HEADER_RECOVERED_KEY,
             brainvision_read_error,
@@ -382,19 +392,27 @@ def _open_stream_source(filepath: str, force_modality: str | None):
 
         mne = require_mne()
         recovered: dict = {}
-        with resolved_vhdr(filepath, substitutions=recovered) as vhdr:
+        staged: dict = {}
+        with contextlib.ExitStack() as stack:
+            vhdr = stack.enter_context(
+                resolved_vhdr(filepath, substitutions=recovered, staged_files=staged)
+            )
             try:
                 raw = mne.io.read_raw_brainvision(vhdr, preload=False, verbose="ERROR")
             except Exception as e:
                 if is_resource_exhaustion(e):
                     raise
-                raise brainvision_read_error(e, vhdr, filepath) from e
-        return _MneSource(
-            filepath,
-            force_modality,
-            raw=raw,
-            extra_metadata={HEADER_RECOVERED_KEY: recovered} if recovered else None,
-        )
+                raise brainvision_read_error(e, vhdr, filepath, staged) from e
+            source = _MneSource(
+                filepath,
+                force_modality,
+                raw=raw,
+                extra_metadata={HEADER_RECOVERED_KEY: recovered} if recovered else None,
+            )
+            # Only now that the source exists does it own the directory; any
+            # failure above leaves it to the ``with``, which removes it.
+            source._on_close = stack.pop_all().close
+        return source
     if ext == "" and os.path.isdir(stripped):
         # Raises UnsupportedFormatError with a clear message if this doesn't
         # look like a BTi directory (same check the in-memory importer uses),
