@@ -19,6 +19,51 @@ from ..core.modality import to_bids_channels_tsv_type
 _PHYS_FIELD_CHARS = 8
 
 
+# EDF/BDF store a signal label in a 16-character ASCII field.
+_LABEL_FIELD_CHARS = 16
+
+
+def _edf_signal_labels(names: list[str]) -> tuple[list[str], dict[str, str]]:
+    """Fit channel labels to the 16-character EDF/BDF field without repeating one.
+
+    Truncating to 16 characters can give two channels the same label: every
+    Delsys Trigno channel of one sensor (``Mini sensor 10: ACC.X 10``,
+    ``Mini sensor 10: ACC.Y 10``, ...) becomes ``Mini sensor 10: ``, and a reader
+    keyed by label then keeps one of them or renames them all. A label that fits
+    is written as it is. Truncated labels that collide are numbered the way the
+    importers number repeated labels (``-0``, ``-1``, ..., then ``-a`` .. ``-z``),
+    with the stem shortened so the suffix still fits, and never onto a label
+    another channel is written under.
+
+    Returns:
+        ``(labels, renames)``: the labels to write, in channel order, and
+        ``{written_label: channel_label}`` for every truncated label that had to
+        be numbered (empty when truncation alone kept them distinct).
+
+    Raises:
+        ValueError: If every candidate suffix collides with a written label.
+    """
+    out = [name[:_LABEL_FIELD_CHARS] for name in names]
+    renames: dict[str, str] = {}
+    for stem in [label for label in dict.fromkeys(out) if out.count(label) > 1]:
+        positions = [
+            i for i, label in enumerate(out) if label == stem and len(names[i]) > _LABEL_FIELD_CHARS
+        ]
+        for idx, pos in enumerate(positions):
+            for suffix in (str(idx), *"abcdefghijklmnopqrstuvwxyz"):
+                candidate = f"{stem[: _LABEL_FIELD_CHARS - len(suffix) - 1]}-{suffix}"
+                if candidate not in out:
+                    break
+            else:
+                raise ValueError(
+                    f"Channel {names[pos]!r} cannot be given a unique "
+                    f"{_LABEL_FIELD_CHARS}-character EDF/BDF label"
+                )
+            out[pos] = candidate
+            renames[candidate] = names[pos]
+    return out, renames
+
+
 def _fit_physical_bound(value: float, *, round_up: bool, max_chars: int = _PHYS_FIELD_CHARS):
     """Round a physical bound OUTWARD to fit the EDF/BDF 8-char header field.
 
@@ -463,8 +508,17 @@ class EDFExporter:
 
         try:
             # MEMORY OPTIMIZATION: Two-pass approach to avoid holding all signals in memory
+            edf_labels, label_renames = _edf_signal_labels(list(rec.channels))
+            if label_renames:
+                warnings.warn(
+                    f"{len(label_renames)} channel label(s) are not unique once truncated to "
+                    f"{_LABEL_FIELD_CHARS} characters for EDF/BDF; writing them as "
+                    + ", ".join(f"{new!r} ({old!r})" for new, old in label_renames.items()),
+                    stacklevel=2,
+                )
+
             # Pass 1: Collect headers only (compute min/max without copying data)
-            for _i, ch_name in enumerate(rec.channels):
+            for ch_index, ch_name in enumerate(rec.channels):
                 signal = rec.signals[ch_name].values
                 ch_info = rec.channels[ch_name]
 
@@ -520,7 +574,7 @@ class EDFExporter:
 
                 # Prepare channel header dictionary
                 ch_dict = {
-                    "label": ch_name[:16],  # EDF+ limits label to 16 chars
+                    "label": edf_labels[ch_index],  # fits the 16-char field, unique
                     "dimension": ch_info["physical_dimension"],
                     "sample_frequency": int(ch_info["sample_frequency"]),
                     "physical_max": phys_max,
