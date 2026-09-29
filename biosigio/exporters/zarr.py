@@ -36,8 +36,8 @@ Layout (one root group per recording)::
                               time: a viewport needs ~1-2k columns at whatever level
                               it picks, so a time-based chunk would shrink fourfold
                               per level and turn one screen into hundreds of tiny
-                              requests. On the 40-minute 129-channel 250 Hz store
-                              the nemarOrg/nemar-cli#1178 audit measured, a
+                              requests. On a 40-minute 129-channel 250 Hz EEG
+                              store measured in a transfer-efficiency audit, a
                               whole-recording view at LEVEL 4 was 594 requests for
                               1.16 MB and the LEVEL 6 minimap 148 for 77 KB; at 1024
                               columns those are 3 requests and 1. The chunk counts
@@ -231,8 +231,9 @@ def _view_chunk_columns(n_time_level: int, view_chunk_columns: int) -> int:
     a single chunk. Deliberately NOT time-based: view levels are read by column
     budget (a viewport wants ~1-2k columns at whatever level it picks), so a
     seconds-based rule would shrink the chunk fourfold per level and shatter one
-    screenful into hundreds of tiny requests (about 2 KB each on the store the
-    nemarOrg/nemar-cli#1178 audit measured). Shared by both exporters (the
+    screenful into hundreds of tiny requests (about 2 KB each on the 40-minute,
+    129-channel, 250 Hz EEG store a transfer-efficiency audit measured). Shared
+    by both exporters (the
     in-memory one here and :mod:`biosigio.exporters.zarr_stream`) so their
     geometry cannot drift.
     """

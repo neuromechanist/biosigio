@@ -45,7 +45,7 @@ CTF_DS = _REPO / "examples/ctf/catch-alp-good-f.ds"
 
 SFREQ = 250.0
 N_SAMPLES = 1000
-# The caps the NEMAR converter passes to every export (nemar-cli#1068).
+# The per-modality rate caps the NEMAR converter passes to every export.
 MODALITY_RATES = {"EEG": 250, "MEG": 250, "IEEG": 1000, "EMG": 1000}
 # What both export paths do unless told otherwise: resolve the sibling sidecar.
 DEFAULT_SIDECAR = "auto"

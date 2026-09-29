@@ -34,7 +34,7 @@ zarr = pytest.importorskip("zarr", reason="Zarr serving format requires the opti
 
 from biosigio import stream_to_zarr  # noqa: E402
 
-# The caps the NEMAR converter passes to every export (nemar-cli#1068); IEEG is
+# The per-modality rate caps the NEMAR converter passes to every export; IEEG is
 # capped at 1000 Hz, so a 5000 Hz recording lands in an `ieeg_1000hz` group.
 MODALITY_RATES = {"EEG": 250, "MEG": 250, "IEEG": 1000, "EMG": 1000}
 SFREQ = 5000.0

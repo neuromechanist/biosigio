@@ -63,7 +63,7 @@ BASE_URL = "https://data.nemar.org/nm000183/v1.0.2/sub-012/ieeg/"
 STEM = "sub-012_task-MachineLearningEEG_run-012"
 CHANNEL = "A12"
 RESOLUTION_MICROVOLTS = 0.1  # "Ch1=A12,,0.1,µV" in the real header
-# The caps the NEMAR converter passes to every export (nemar-cli#1068).
+# The per-modality rate caps the NEMAR converter passes to every export.
 MODALITY_RATES = {"EEG": 250, "MEG": 250, "IEEG": 1000, "EMG": 1000}
 # nemar-cli's should_stream() boundary: above this a recording converts through
 # stream_to_zarr instead of Recording.from_file + to_zarr.

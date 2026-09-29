@@ -384,8 +384,8 @@ def test_zarr_two_group_store_narrow_chunks_keep_content_per_group(tmp_path):
         )
 
 
-# The 40-minute, 129-channel, 250 Hz EEG store the transfer-efficiency audit
-# measured (nemarOrg/nemar-cli#1178): level 0 is 607586 samples.
+# The 40-minute, 129-channel, 250 Hz EEG store a transfer-efficiency audit
+# measured (the figures in docs/formats/zarr.md): level 0 is 607586 samples.
 _REFERENCE_N_TIME = 607586
 _REFERENCE_LEVEL_LENGTHS = [151896, 37974, 9493, 2373, 593, 148]
 
@@ -399,8 +399,8 @@ def test_reference_store_view_chunk_counts():
     level lengths, `_view_chunk_columns` for the chunk width) against the numbers
     in the audit, so a change to either rule has to restate the acceptance case.
     Chunk counts only: the audit's byte figures (1.16 MB across level 4, 77 KB
-    across level 6) come from nemarOrg/nemar-cli#1178 and are not re-measured
-    here, since they depend on that store's channel count and compression.
+    across level 6) were measured once on that store and are not re-measured
+    here, since they depend on its channel count and compression.
     """
     lengths = _pyramid_level_lengths(_REFERENCE_N_TIME, 4, 512, 12)
     assert lengths == _REFERENCE_LEVEL_LENGTHS
