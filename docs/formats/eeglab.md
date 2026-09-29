@@ -65,7 +65,11 @@ extension -- both forms are `.set`.
 ### MATLAB v7.3 (HDF5) path
 
 1. Opening the file with h5py and reading the top-level `EEG` group's fields
-   directly (`nbchan`, `srate`, `pnts`, `trials`, `data`, ...). Header scalars
+   directly (`nbchan`, `srate`, `pnts`, `trials`, `data`, ...). A v7.3 file can
+   also carry the struct's fields flat at the HDF5 root with no `EEG` group;
+   when the root holds `nbchan`, `srate`, `pnts` and `data`, the root is read
+   as the struct (an `EEG` group wins when both are present). A file with
+   neither layout is reported as corrupt. Header scalars
    round-trip through HDF5 as 1x1 float arrays rather than true scalars, so
    they are flattened and coerced to int/float explicitly
 2. Reading the signal matrix from `EEG.data`. HDF5 stores the matrix
@@ -79,7 +83,9 @@ extension -- both forms are `.set`.
    latency, ...), each stored as an array of HDF5 object references into a
    `#refs#` group rather than as flat values. Every field is dereferenced
    through `#refs#`, and char arrays are decoded from their Unicode
-   code-point representation
+   code-point representation. An empty MATLAB value (`[]`, stored as a small
+   `uint64` dimensions array flagged `MATLAB_empty`) is read as no value, the
+   same as a null reference, rather than as characters or a number
 4. Raising the same `NotContinuousRecordingError` the rest of biosigIO uses
    when `EEG.trials > 1` (an epoched file), instead of silently flattening
    epochs into a fake continuous stream
@@ -110,10 +116,9 @@ rec.plot_signals(time_range=(0, 5))
 
 EEGLAB doesn't always explicitly designate channel types. biosigIO's EEGLAB importer uses the following rules to assign channel types:
 
-1. Channels with 'EMG' in the name are assigned type 'EMG'
-2. Channels with 'EEG' in the name are assigned type 'EEG'
-3. Channels with 'ACC' in the name are assigned type 'ACC'
-4. Other channels are assigned type 'OTHER'
+1. A recognized `chanlocs.type` is used directly: `EEG`, `EMG`, `ECG`, `EKG`, `EOG`, `SEEG` and `ECOG` pass through; `ACC`/`ACCELEROMETER` become `ACC`, `GYRO`/`GYROSCOPE` become `GYRO`, and `TRIG`/`TRIGGER` become `TRIG`
+2. Otherwise the label is searched, in this order, for 'EMG', 'ECG' or 'EKG' (type `ECG`), 'EOG', 'ACC', 'GYRO' and 'TRIG'
+3. Other channels are assigned type 'OTHER'; the label alone never makes a channel `EEG`, so a BIDS `channels.tsv` is the way to type unlabeled EEG channels
 
 ## Notes and Limitations
 
@@ -122,6 +127,7 @@ EEGLAB doesn't always explicitly designate channel types. biosigIO's EEGLAB impo
 - Signal data stored inline in the `.set` or in a separate float32 `.fdt` file is supported for both save forms; the sibling `.fdt` is resolved by the `.set` path (so BIDS-renamed files load even though `EEG.data` keeps the original `.fdt` name)
 - Event markers are loaded into the `events` table (`rec.events`): EEGLAB event latency/duration (samples) are converted to onset/duration in seconds and the event `type` becomes the description
 - Channel locations (if available) are preserved in the channel information
+- Channel labels are made unique: a repeated `chanlocs` label (or a padded default label that collides with a real one) is renamed with a numeric suffix (`Fz`, `Fz_2`, `Fz_3`, ...) and a warning names it
 - An epoched MATLAB v7.3 file (`EEG.trials > 1`) raises `NotContinuousRecordingError` rather than being read as a fake continuous recording. The classic path's separate, pre-existing behavior for an epoched `.fdt` is unchanged here: it concatenates trials into one continuous series instead (see `test_eeglab_reads_epoched_fdt`). The two paths therefore disagree on what an epoched file should become; that inconsistency predates this change and is tracked separately rather than resolved here.
 - Some EEGLAB-specific information may not be fully preserved in the conversion
 - Time information is properly handled to maintain accurate timing in the imported data 
