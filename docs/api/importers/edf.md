@@ -33,6 +33,12 @@ The EDF importer supports:
 
 The `.edf` and `.bdf` extensions are auto-detected by `Recording.from_file`.
 
+EDF does not require unique channel labels. Repeated labels get MNE-style
+running suffixes (`T8-P8-0`, `T8-P8-1`) so every channel is kept; see
+[Repeated channel labels](../../formats/edf.md#repeated-channel-labels).
+Three non-compliant but intact conditions pyedflib rejects are recovered
+through a tolerant fallback; see the [EDF format page](../../formats/edf.md).
+
 ## Channel Type Detection
 
 The EDF importer identifies channel types from the channel label and transducer
@@ -42,9 +48,13 @@ handled similarly, otherwise `OTHER`).
 
 ## Parameters
 
-`EDFImporter().load(filepath)` takes:
+`EDFImporter().load(filepath, *, mixed_rate="error")` takes:
 
 - **filepath (str)**: Path to the EDF/BDF file.
+- **mixed_rate (str)**: What to do when channels carry different sampling
+  rates. `"error"` (default) raises `MixedSamplingRateError`; `"resample"`
+  upsamples the slower channels to the fastest rate and keeps each channel's
+  original rate as `original_sample_frequency`.
 
 The importer reads the entire file; it does not support partial/segment loading.
 
