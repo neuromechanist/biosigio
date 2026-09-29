@@ -20,6 +20,7 @@ numerically identical to pyedflib's own physical values, not an assumption.
 """
 
 import os
+import re
 import struct
 import tempfile
 
@@ -30,7 +31,7 @@ import pytest
 pytest.importorskip("mne", reason="the tolerant EDF/BDF fallback requires the 'meg' extra (mne)")
 
 from biosigio import Recording  # noqa: E402
-from biosigio.exceptions import CorruptFileError  # noqa: E402
+from biosigio.exceptions import CorruptFileError, FileReadError  # noqa: E402
 from biosigio.importers._edf_tolerant import (  # noqa: E402
     DEGENERATE_PHYSICAL_RANGE,
     DISCONTINUOUS_DATARECORDS,
@@ -770,3 +771,33 @@ def test_channel_gains_matches_expected_for_known_units(tmp_path):
     raw = mne.io.read_raw(path, preload=True, verbose="ERROR")
     gains = _channel_gains(raw, ["uV", "mV", ""])
     np.testing.assert_allclose(gains, [1e-6, 1e-3, 1.0])
+
+
+# --- pairing MNE's channels back to header rows --------------------------------
+
+
+def test_pairing_accepts_exactly_mnes_rename_forms():
+    from biosigio.importers._edf_tolerant import _check_channel_pairing
+
+    _check_channel_pairing(
+        "f.edf", ["A-0", "A-B", "A-1", "A-a", "C-12"], ["A", "A-B", "A", "A", "C"]
+    )
+
+
+@pytest.mark.parametrize(
+    ("mne_names", "header_labels", "bad"),
+    [
+        # A reordered pair: MNE's "A-B" sits where the header has "A". A prefix
+        # test accepted it and would have swapped the two rows' scaling.
+        (["A-B", "A"], ["A", "A-B"], "A-B"),
+        (["A-0x"], ["A"], "A-0x"),  # not a running number or a single letter
+        (["A-ab"], ["A"], "A-ab"),
+        (["A0"], ["A"], "A0"),
+        (["a.b-0"], ["a+b"], "a.b-0"),  # the label is matched literally, not as a regex
+    ],
+)
+def test_pairing_rejects_anything_else(mne_names, header_labels, bad):
+    from biosigio.importers._edf_tolerant import _check_channel_pairing
+
+    with pytest.raises(FileReadError, match=re.escape(f"could not match channel {bad!r}")):
+        _check_channel_pairing("f.edf", mne_names, header_labels)
