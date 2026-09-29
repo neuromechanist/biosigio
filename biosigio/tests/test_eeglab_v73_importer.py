@@ -525,6 +525,40 @@ def test_v73_empty_top_level_chanlocs_or_event_loads(tmp_path, flat, empty_chanl
     assert list(rec.events["description"]) == ([] if empty_event else ["stim"])
 
 
+@pytest.mark.parametrize("field_name", ["chanlocs", "event"])
+@pytest.mark.parametrize("kind", ["numeric", "char"])
+def test_v73_non_empty_non_struct_chanlocs_or_event_is_a_read_error(tmp_path, field_name, kind):
+    """A NON-empty numeric or char dataset where EEGLAB writes a struct array
+    is not "no channels"/"no events": it is a typed read error naming the
+    field, never read silently as none (and never worded as corrupt)."""
+    path = str(tmp_path / "odd_field.set")
+    _write_v73_set(path, nbchan=2, pnts=10, srate=100.0, data=np.zeros((2, 10)))
+    inner_path = path + ".inner"
+    with open(path, "rb") as fh:
+        body = fh.read()[_HEADER_SIZE:]
+    with open(inner_path, "wb") as fh:
+        fh.write(body)
+    with h5py.File(inner_path, "a") as f:
+        if kind == "numeric":
+            ds = f["EEG"].create_dataset(field_name, data=np.array([[1.0, 2.0, 3.0]]))
+            ds.attrs["MATLAB_class"] = np.bytes_(b"double")
+        else:
+            ds = f["EEG"].create_dataset(
+                field_name, data=np.array([ord(c) for c in "Fz"], dtype=np.uint16)
+            )
+            ds.attrs["MATLAB_class"] = np.bytes_(b"char")
+    with open(inner_path, "rb") as fh:
+        body = fh.read()
+    os.remove(inner_path)
+    with open(path, "wb") as fh:
+        fh.write(_wrap_matlab_v73_header(body))
+
+    with pytest.raises(FileReadError, match=f"/EEG/{field_name}") as info:
+        EEGLABImporter().load(path)
+    assert type(info.value) is FileReadError
+    assert "corrupt" not in str(info.value).lower()
+
+
 def test_v73_flat_root_without_pnts_is_not_accepted(tmp_path):
     """The flat-root guard needs pnts too: nbchan/srate/data alone are not a dataset."""
     path = str(tmp_path / "no_pnts.set")
