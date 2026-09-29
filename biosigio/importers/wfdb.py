@@ -7,7 +7,7 @@ from ..exceptions import is_resource_exhaustion
 
 # import numpy as np # Keep commented out until needed
 # from typing import List, Dict # Keep commented out until needed
-from ._labels import unique_channel_labels
+from ._labels import DEDUPLICATED_LABELS_KEY, unique_channel_labels
 from .base import BaseImporter
 
 
@@ -64,7 +64,11 @@ class WFDBImporter(BaseImporter):
             # reader accepts one from a hand-edited or foreign header, and a
             # Recording is keyed by label: suffix repeats as the EDF importer
             # does, so every signal survives instead of one replacing another.
-            labels = unique_channel_labels(list(record.sig_name), source="WFDB")
+            labels, renames = unique_channel_labels(
+                list(record.sig_name), source="WFDB", filepath=filepath
+            )
+            if renames:
+                rec.set_metadata(DEDUPLICATED_LABELS_KEY, renames)
             for i, (sig_name, label) in enumerate(zip(record.sig_name, labels, strict=True)):
                 rec.add_channel(
                     label=label,

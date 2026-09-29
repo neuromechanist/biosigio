@@ -4,15 +4,24 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+# Recording-metadata key under which an importer records the renames made by
+# :func:`unique_channel_labels`, as ``{new_label: original_label}``. It rides in
+# ``Recording.metadata``, so the Zarr exporters (in-memory and streaming) write
+# it into the store's ``recording_metadata`` and a re-import restores it.
+DEDUPLICATED_LABELS_KEY = "channel_labels_deduplicated"
 
-def unique_channel_labels(labels: list[str], *, source: str = "EDF") -> list[str]:
+
+def unique_channel_labels(
+    labels: list[str], *, source: str = "EDF", filepath: str | None = None
+) -> tuple[list[str], dict[str, str]]:
     """Rename repeated channel labels the way MNE does, so no channel is dropped.
 
     EDF does not require unique labels (CHB-MIT declares ``T8-P8`` twice and
     uses ``-`` as a placeholder for several unused inputs), but a Recording is
     keyed by label. The same rule serves any other source that can repeat a
     label (a WFDB ``sig_name``, a Zarr store published before this rule
-    existed); ``source`` only names the format in the warning and error text.
+    existed); ``source`` names the format and ``filepath`` the file in the
+    warning and error text.
     Every occurrence of a repeated label gets a running suffix
     ``-0``, ``-1``, ...; a suffix that would collide with an existing label
     falls through to ``-a``, ``-b``, ... Unique labels are returned unchanged.
@@ -25,6 +34,13 @@ def unique_channel_labels(labels: list[str], *, source: str = "EDF") -> list[str
     MNE iterates a ``set`` of stems, so its result can differ from this one
     and from run to run.
 
+    Returns:
+        ``(labels, renames)``: the de-duplicated labels, in input order, and
+        ``{new_label: original_label}`` for every label that was changed
+        (empty when all labels were already unique). Callers record a
+        non-empty mapping under :data:`DEDUPLICATED_LABELS_KEY` so a rename is
+        visible downstream rather than only in a log line.
+
     Raises:
         ValueError: If every candidate suffix (the running number, then
             ``a``..``z``) for an occurrence collides with an existing label.
@@ -32,13 +48,16 @@ def unique_channel_labels(labels: list[str], *, source: str = "EDF") -> list[str
     names = list(labels)
     dups = [name for name in dict.fromkeys(names) if names.count(name) > 1]
     if not dups:
-        return names
+        return names, {}
+    where = f" in {filepath}" if filepath else ""
     logger.warning(
-        "%s channel labels are not unique, found duplicates for: %s. "
+        "%s channel labels are not unique%s, found duplicates for: %s. "
         "Applying running numbers for duplicates.",
         source,
+        where,
         dups,
     )
+    renames: dict[str, str] = {}
     for stem in dups:
         positions = [i for i, name in enumerate(names) if name == stem]
         for idx, pos in enumerate(positions):
@@ -48,8 +67,10 @@ def unique_channel_labels(labels: list[str], *, source: str = "EDF") -> list[str
                     break
             else:
                 raise ValueError(
-                    f"Could not de-duplicate {source} channel label {stem!r}: every "
-                    "suffixed candidate collides with an existing label"
+                    f"Could not de-duplicate {source} channel label {stem!r}{where}: every "
+                    "suffixed candidate (the running number, then a..z) collides with an "
+                    "existing label"
                 )
             names[pos] = candidate
-    return names
+            renames[candidate] = stem
+    return names, renames
