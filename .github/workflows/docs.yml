@@ -48,7 +48,7 @@ jobs:
           uv pip install -e ".[docs]"
 
       - name: Build documentation
-        run: uv run mkdocs build
+        run: uv run mkdocs build --strict
 
       - name: Deploy documentation
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
