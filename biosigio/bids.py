@@ -490,11 +490,10 @@ def apply_channels_tsv_to_stream(
     left exactly as the importer built them.
 
     Rows are matched by the ``name`` column, and several rows naming one channel
-    compose in file order, the same as :func:`apply_channels_tsv`. Unlike a
-    Recording -- whose channels are a dict and so unique by label -- a streaming
-    source may list the same label twice (EDF permits it); every entry with that
-    label gets the same treatment, so duplicate labels cannot end up in different
-    units inside one store.
+    compose in file order, the same as :func:`apply_channels_tsv`. Should a
+    source ever list the same label twice, every entry with that label gets the
+    same treatment, so duplicate labels cannot end up in different units inside
+    one store (the EDF source suffixes repeats MNE-style, so it lists none).
 
     Args:
         channels: The source's per-channel dicts (``label``, ``channel_type``,
