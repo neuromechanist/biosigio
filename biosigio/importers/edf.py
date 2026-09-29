@@ -242,7 +242,9 @@ class EDFImporter(BaseImporter):
         EDF+D (discontinuous). A recovered read is flagged in metadata via
         ``edf_tolerant_read`` / ``edf_tolerant_read_reason``. Anything else --
         including a genuinely truncated/corrupt file -- still raises
-        :class:`~biosigio.exceptions.CorruptFileError` as before.
+        :class:`~biosigio.exceptions.CorruptFileError` as before. When one of the
+        three needs the fallback and MNE is not installed, an ``ImportError``
+        naming the ``meg`` extra is raised, its ``__cause__`` the pyedflib error.
 
         Args:
             filepath: Path to the EDF file
@@ -276,16 +278,21 @@ class EDFImporter(BaseImporter):
                         filepath, fallback_reason
                     )
                 except ImportError as import_err:
-                    # MNE (the `meg` extra) isn't installed -- degrade to the
-                    # original pyedflib error rather than leaving this silent,
-                    # chained to the ImportError so its install hint survives.
+                    # MNE (the `meg` extra) isn't installed. That is this
+                    # environment, not the file, so it stays an ImportError
+                    # (untyped, as the streaming source raises it) rather than
+                    # becoming a permanent read failure; the pyedflib error it
+                    # would have recovered from is its __cause__.
                     logger.warning(
                         "EDF/BDF file %s is recoverable by the tolerant reader, but that "
-                        "needs MNE-Python (the 'meg' extra), which is not installed; "
-                        "raising the original pyedflib error.",
+                        "needs MNE-Python (the 'meg' extra), which is not installed.",
                         filepath,
                     )
-                    raise open_exc from import_err
+                    raise ImportError(
+                        f"EDF/BDF file {filepath} can only be read by the tolerant "
+                        "reader, which needs MNE-Python: install the 'meg' extra "
+                        f"({import_err})"
+                    ) from open_exc
                 recording_info: dict = {}
             else:
                 fallback_reason = None
@@ -416,6 +423,10 @@ class EDFImporter(BaseImporter):
 
             return rec
 
+        except ImportError:
+            # Only the tolerant fallback's missing `meg` extra raises this (see
+            # above): an environment problem, never typed as a file failure.
+            raise
         except Exception as e:
             # Resource exhaustion (MemoryError -- incl. numpy's _ArrayMemoryError
             # from the per-channel readSignal loop above -- or a thread/allocation
