@@ -28,7 +28,9 @@ biosigIO uses the `wfdb` library (PyPI package `wfdb`) internally. It ships as a
 
 ## Repeated Signal Names
 
-The `wfdb` writer refuses a repeated signal name, but its reader accepts one from a hand-edited or foreign header. A `Recording` is keyed by channel label, so repeated names get the same running suffixes as repeated EDF labels (`II-0`, `II-1`; see [EDF repeated channel labels](edf.md#repeated-channel-labels)) and a warning names them. Every signal is kept.
+The `wfdb` writer refuses a repeated signal name, but its reader accepts one from a hand-edited or foreign header. A `Recording` is keyed by channel label, so repeated names get the same running suffixes as repeated EDF labels (`II-0`, `II-1`; see [EDF repeated channel labels](edf.md#repeated-channel-labels)) and a warning names them. Every signal is kept, and the renames are recorded in the metadata under `channel_labels_deduplicated` (`{new_label: original_label}`).
+
+A record `wfdb` cannot parse (a malformed header, a truncated or missing signal file, or a repeated name whose every suffix is already taken) raises a typed `FileReadError`, like the other importers.
 
 ## Annotation Handling
 

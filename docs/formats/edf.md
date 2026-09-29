@@ -123,9 +123,15 @@ twice and uses `-` for several unused inputs. A `Recording` is keyed by label,
 so every occurrence of a repeated label gets a running suffix, the same way
 MNE names them: `T8-P8-0`, `T8-P8-1`. A suffix that would collide with an
 existing label falls through to `-a`, `-b`, and so on. A warning names the
-repeated labels. The in-memory importer, the streaming Zarr export and the
+repeated labels and the file. The in-memory importer, the streaming Zarr export and the
 tolerant fallback all name the channels of one file identically, so a
 `channels.tsv` written by MNE-BIDS matches by name.
+
+Every rename is also recorded in the recording's metadata under
+`channel_labels_deduplicated`, as `{new_label: original_label}` (for example
+`{"T8-P8-0": "T8-P8", "T8-P8-1": "T8-P8"}`). Both Zarr export paths write it
+into the store's `recording_metadata`, so it survives a round trip; a file
+whose labels are already unique carries no such entry.
 
 For a single repeated label the names match MNE's exactly. When several
 repeated labels interact (one label's suffixed name colliding with another's),
