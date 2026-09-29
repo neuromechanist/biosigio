@@ -45,6 +45,9 @@ _MATLAB_V73_MAGIC = b"MATLAB 7.3 MAT-file"
 _MAGIC_SNIFF_BYTES = 128
 # Sampling rate assumed when a .set header carries none (absent, empty or zero).
 _DEFAULT_SRATE = 1000.0
+# Recording-metadata key recording that the signal was read from a ``.fdt`` other
+# than the one ``EEG.data`` names (the BIDS-renamed same-stem sibling).
+FDT_RECOVERED_KEY = "eeglab_fdt_recovered"
 
 logger = logging.getLogger(__name__)
 
@@ -364,7 +367,10 @@ class EEGLABImporter(BaseImporter):
 
     @staticmethod
     def _read_fdt(
-        set_filepath: str, data_field: np.ndarray, metadata: dict[str, Any]
+        set_filepath: str,
+        data_field: np.ndarray,
+        metadata: dict[str, Any],
+        rec: Recording | None = None,
     ) -> np.ndarray:
         """Load the signal matrix from a sibling EEGLAB ``.fdt`` float32 file.
 
@@ -373,12 +379,15 @@ class EEGLABImporter(BaseImporter):
         then stores only the ``.fdt``'s original (pre-BIDS-rename) filename. The
         sibling ``.fdt`` next to the ``.set`` is resolved first because BIDS
         renames the file on disk but not the embedded reference, with the
-        embedded name as a fallback.
+        embedded name as a fallback. Reading a file other than the one the
+        header names is logged and, when ``rec`` is given, recorded under
+        :data:`FDT_RECOVERED_KEY` as ``{"referenced": ..., "used": ...}``.
 
         Args:
             set_filepath: Path to the ``.set`` file being loaded.
             data_field: The ``EEG.data`` char array holding the ``.fdt`` name.
             metadata: Extracted header metadata (needs ``nbchan``/``pnts``).
+            rec: The Recording being built, to record a substitution on.
 
         Returns:
             The signal matrix as a ``(nbchan, pnts * trials)`` float32 array.
@@ -403,6 +412,17 @@ class EEGLABImporter(BaseImporter):
                 f"EEGLAB data is in a separate .fdt file but none was found "
                 f"(tried sibling {sibling!r} and embedded name {embedded!r})"
             )
+        referenced = os.path.basename(embedded)
+        used = os.path.basename(fdt_path)
+        if referenced and used != referenced:
+            logger.info(
+                "EEGLAB %s names data file %s; reading the same-stem sibling %s instead.",
+                set_filepath,
+                referenced,
+                used,
+            )
+            if rec is not None:
+                rec.set_metadata(FDT_RECOVERED_KEY, {"referenced": referenced, "used": used})
         raw = np.fromfile(fdt_path, dtype="<f4")
         expected = nbchan * pnts * trials
         if raw.size != expected:
@@ -693,6 +713,7 @@ class EEGLABImporter(BaseImporter):
                         filepath,
                         filename_field,
                         {"nbchan": nbchan, "pnts": pnts, "trials": trials},
+                        rec,
                     )
 
                 time_index = np.arange(signal_data.shape[1]) / srate
@@ -834,7 +855,7 @@ class EEGLABImporter(BaseImporter):
                 # than the numeric matrix, so load the sibling ``.fdt`` instead.
                 signal_data = data["data"]
                 if signal_data.dtype.kind in ("U", "S"):
-                    signal_data = self._read_fdt(filepath, signal_data, metadata)
+                    signal_data = self._read_fdt(filepath, signal_data, metadata, rec)
 
                 # Derive the time index in seconds from the sample count. EEGLAB's
                 # `times` field is in milliseconds, so dividing it by srate (the old

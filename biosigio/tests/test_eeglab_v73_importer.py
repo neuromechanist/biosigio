@@ -421,6 +421,11 @@ def test_v73_flat_root_struct_companion_fdt_resolved(tmp_path):
 
     rec = EEGLABImporter().load(set_path)
 
+    assert rec.metadata["eeglab_fdt_recovered"] == {
+        "referenced": "original_name_before_bids.fdt",
+        "used": "sub-01_eeg.fdt",
+    }
+
     assert rec.signals.shape == (pnts, nbchan)
     for i, label in enumerate(rec.signals.columns):
         np.testing.assert_array_equal(rec.signals[label].to_numpy(), data[i])

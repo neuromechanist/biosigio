@@ -253,13 +253,14 @@ def test_eeglab_reads_separate_fdt(tmp_path):
 
     rec = EEGLABImporter().load(set_path)
 
+    assert "eeglab_fdt_recovered" not in rec.metadata  # the named file was read
     assert rec.signals.shape == (500, 8)  # samples x channels
     for i, label in enumerate(rec.signals.columns):
         # Recording stores samples x channels, so column i is data row i.
         np.testing.assert_allclose(rec.signals[label].to_numpy(), data[i], rtol=0, atol=1e-5)
 
 
-def test_eeglab_fdt_resolves_sibling_despite_renamed_embedded_name(tmp_path):
+def test_eeglab_fdt_resolves_sibling_despite_renamed_embedded_name(tmp_path, caplog):
     """BIDS renames the .fdt on disk but not EEG.data; the sibling wins."""
     rng = np.random.default_rng(1)
     data = (rng.standard_normal((4, 256)) * 5).astype(np.float32)
@@ -268,10 +269,17 @@ def test_eeglab_fdt_resolves_sibling_despite_renamed_embedded_name(tmp_path):
     # find the sibling by the .set path.
     set_path = _write_set_with_fdt(str(tmp_path), "sub-09_task-rest_eeg", data, 256, "Merged.fdt")
 
-    rec = EEGLABImporter().load(set_path)
+    with caplog.at_level("INFO", logger="biosigio.importers.eeglab"):
+        rec = EEGLABImporter().load(set_path)
     assert rec.signals.shape == (256, 4)
     for i, label in enumerate(rec.signals.columns):
         np.testing.assert_allclose(rec.signals[label].to_numpy(), data[i], rtol=0, atol=1e-5)
+    # The substitution is recorded and logged, not silent.
+    assert rec.metadata["eeglab_fdt_recovered"] == {
+        "referenced": "Merged.fdt",
+        "used": "sub-09_task-rest_eeg.fdt",
+    }
+    assert "names data file Merged.fdt" in caplog.text
 
 
 def test_eeglab_reads_epoched_fdt(tmp_path):
