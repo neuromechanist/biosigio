@@ -971,6 +971,11 @@ def _unique_eeglab_labels(rec: Recording, channel_info_list: list[dict[str, Any]
                 stacklevel=4,
             )
         info["label"] = label
+    # Defensive guard, unreachable from any input: suffix_repeated_labels
+    # returns unique labels by construction (every suffix skips both the
+    # source's own labels and those already taken). It stays so that a future
+    # change to the suffix rule fails loudly here instead of silently
+    # overwriting a channel in the rec.channels writes that follow.
     if len(set(labels)) != len(labels):
         raise RuntimeError(f"EEGLAB channel labels are still not unique: {labels}")
     if renames:
