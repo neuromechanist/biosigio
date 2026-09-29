@@ -16,7 +16,7 @@ which keep the full notes; releases older than 1.1.0 are listed there only.
 
 - `Recording.select_channels` raises `ValueError` when a name is listed twice,
   instead of returning a recording whose signal frame has the column twice and whose channel table has it once.
-  Any iterable of names that worked before still does (a list, tuple, set, dict keys, numpy array, pandas `Index` or `Series`).
+  Every iterable of names that selected channels in 1.2.9 (a list, dict keys, numpy array, pandas `Index` or `Series`) still does.
 - The Parquet/Arrow importer raises `ValueError` for a table that repeats a signal column name
   instead of building a recording with two columns under one label.
   Parquet cannot read such a file back, so only an edited Feather/Arrow file reaches this.
@@ -67,6 +67,9 @@ which keep the full notes; releases older than 1.1.0 are listed there only.
   `{sidecar_name: channel_label}`, a key present only when such a match happened.
   An ambiguous row is left unapplied with a warning
   ([#136](https://github.com/neuromechanist/biosigio/issues/136)).
+- `Recording.select_channels` accepts any iterable of names:
+  a tuple or a set, which raised in 1.2.9, now select those channels,
+  and a generator, which selected nothing, now selects its names.
 - CSV: a repeated name in `channel_names` or `columns` raises `ValueError` naming it,
   instead of pandas' `Data must be 1-dimensional`.
 
