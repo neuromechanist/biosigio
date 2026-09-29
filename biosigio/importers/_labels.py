@@ -5,12 +5,15 @@ import logging
 logger = logging.getLogger(__name__)
 
 
-def unique_channel_labels(labels: list[str]) -> list[str]:
-    """Rename repeated EDF labels the way MNE does, so no channel is dropped.
+def unique_channel_labels(labels: list[str], *, source: str = "EDF") -> list[str]:
+    """Rename repeated channel labels the way MNE does, so no channel is dropped.
 
     EDF does not require unique labels (CHB-MIT declares ``T8-P8`` twice and
     uses ``-`` as a placeholder for several unused inputs), but a Recording is
-    keyed by label. Every occurrence of a repeated label gets a running suffix
+    keyed by label. The same rule serves any other source that can repeat a
+    label (a WFDB ``sig_name``, a Zarr store published before this rule
+    existed); ``source`` only names the format in the warning and error text.
+    Every occurrence of a repeated label gets a running suffix
     ``-0``, ``-1``, ...; a suffix that would collide with an existing label
     falls through to ``-a``, ``-b``, ... Unique labels are returned unchanged.
 
@@ -31,8 +34,9 @@ def unique_channel_labels(labels: list[str]) -> list[str]:
     if not dups:
         return names
     logger.warning(
-        "EDF channel labels are not unique, found duplicates for: %s. "
+        "%s channel labels are not unique, found duplicates for: %s. "
         "Applying running numbers for duplicates.",
+        source,
         dups,
     )
     for stem in dups:
@@ -44,7 +48,7 @@ def unique_channel_labels(labels: list[str]) -> list[str]:
                     break
             else:
                 raise ValueError(
-                    f"Could not de-duplicate EDF channel label {stem!r}: every "
+                    f"Could not de-duplicate {source} channel label {stem!r}: every "
                     "suffixed candidate collides with an existing label"
                 )
             names[pos] = candidate

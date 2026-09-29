@@ -26,6 +26,7 @@ from ..core.emg import Recording
 from ..exceptions import is_resource_exhaustion
 from ..exporters.zarr import FORMAT, FORMAT_VERSION, require_zarr
 from ..tabular_schema import metadata_from_mapping
+from ._labels import unique_channel_labels
 from .base import BaseImporter
 
 
@@ -84,11 +85,18 @@ class ZarrImporter(BaseImporter):
             scale = np.asarray(a0_attrs["scale"], dtype=np.float64)
             offset = np.asarray(a0_attrs["offset"], dtype=np.float64)
             rate = float(dict(grp.attrs)["rate"])
-            for meta in dict(grp.attrs)["channels"]:
+            channel_rows = dict(grp.attrs)["channels"]
+            # A store published by the streaming path before repeated EDF labels
+            # were suffixed can hold the same label twice; a Recording is keyed by
+            # label, so suffix repeats (with a warning) rather than refuse it.
+            labels = unique_channel_labels(
+                [str(meta["label"]) for meta in channel_rows], source="Zarr store"
+            )
+            for label, meta in zip(labels, channel_rows, strict=True):
                 i = int(meta["row_index"])
                 physical = digital[i].astype(np.float64) * scale[i] + offset[i]
                 rec.add_channel(
-                    label=str(meta["label"]),
+                    label=label,
                     data=physical,
                     sample_frequency=rate,
                     physical_dimension=str(meta.get("unit", "n/a")),

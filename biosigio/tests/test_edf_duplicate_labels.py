@@ -137,3 +137,36 @@ def test_add_channel_refuses_a_duplicate_label():
     # The original channel is untouched.
     assert list(rec.channels) == ["T8-P8"]
     assert float(rec.signals["T8-P8"].abs().sum()) == 0.0
+
+
+def test_zarr_store_with_duplicate_labels_reimports(tmp_path, caplog):
+    """A store the streaming path published before this fix still loads.
+
+    Such a store lists the same label on two rows (the stuck NEMAR stores are
+    exactly that). The store is written for real and its channel rows are then
+    edited on disk to the pre-fix shape, the way the fallback tests byte-patch
+    an EDF header; re-import suffixes the repeat and warns instead of refusing.
+    """
+    zarr = pytest.importorskip("zarr", reason="Zarr serving format requires the 'zarr' extra")
+    t = np.arange(1000)
+    rec = Recording()
+    rec.add_channel("T8-P8", np.sin(t / 5.0), 250, "uV", "EEG")
+    rec.add_channel("FT10-T8", np.cos(t / 7.0), 250, "uV", "EEG")
+    rec.add_channel("T8-P8x", np.sin(t / 11.0), 250, "uV", "EEG")
+    store = rec.to_zarr(str(tmp_path / "pre_fix"), dtype="float32")
+
+    grp = zarr.open_group(store=zarr.storage.LocalStore(store), mode="r+")["eeg_250hz"]
+    rows = [dict(row) for row in grp.attrs["channels"]]  # ty: ignore[not-iterable]
+    rows[2]["label"] = "T8-P8"
+    grp.attrs["channels"] = rows
+
+    with caplog.at_level("WARNING", logger="biosigio.importers._labels"):
+        rt = Recording.from_file(store)
+
+    assert list(rt.channels) == ["T8-P8-0", "FT10-T8", "T8-P8-1"]
+    assert "Zarr store channel labels are not unique" in caplog.text
+    # Each suffixed channel still reads its own row of the store.
+    signals = rec.signals
+    assert signals is not None
+    np.testing.assert_allclose(rt.signals["T8-P8-0"].to_numpy(), signals["T8-P8"].to_numpy())
+    np.testing.assert_allclose(rt.signals["T8-P8-1"].to_numpy(), signals["T8-P8x"].to_numpy())
