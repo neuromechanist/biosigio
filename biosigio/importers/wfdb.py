@@ -7,6 +7,7 @@ from ..exceptions import is_resource_exhaustion
 
 # import numpy as np # Keep commented out until needed
 # from typing import List, Dict # Keep commented out until needed
+from ._labels import unique_channel_labels
 from .base import BaseImporter
 
 
@@ -59,10 +60,14 @@ class WFDBImporter(BaseImporter):
             if record.comments:
                 rec.set_metadata("comments", "\n".join(record.comments))
 
-            # Add channels
-            for i, sig_name in enumerate(record.sig_name):
+            # Add channels. wfdb's writer refuses a repeated sig_name but its
+            # reader accepts one from a hand-edited or foreign header, and a
+            # Recording is keyed by label: suffix repeats as the EDF importer
+            # does, so every signal survives instead of one replacing another.
+            labels = unique_channel_labels(list(record.sig_name), source="WFDB")
+            for i, (sig_name, label) in enumerate(zip(record.sig_name, labels, strict=True)):
                 rec.add_channel(
-                    label=sig_name,
+                    label=label,
                     data=record.p_signal[:, i],
                     sample_frequency=record.fs,  # Use record's fs, assuming uniform sampling
                     physical_dimension=record.units[i]
@@ -94,7 +99,7 @@ class WFDBImporter(BaseImporter):
                 # Filter out None values before updating
                 filtered_metadata = {k: v for k, v in channel_metadata.items() if v is not None}
                 if filtered_metadata:  # Only update if there is metadata to add
-                    rec.channels[sig_name].update(filtered_metadata)
+                    rec.channels[label].update(filtered_metadata)
 
             # Read annotations if available (look for .atr file by default)
             # Note: wfdb-python automatically searches common annotation extensions
