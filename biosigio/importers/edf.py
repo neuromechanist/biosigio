@@ -7,7 +7,7 @@ import pyedflib
 
 from ..core.emg import Recording
 from ..exceptions import MixedSamplingRateError, classify_read_error, is_resource_exhaustion
-from ._edf_tolerant import classify_pyedflib_error, read_edf_tolerant
+from ._edf_tolerant import classify_pyedflib_error, raise_host_open_error, read_edf_tolerant
 from ._labels import DEDUPLICATED_LABELS_KEY, unique_channel_labels
 from .base import BaseImporter
 
@@ -264,6 +264,10 @@ class EDFImporter(BaseImporter):
             try:
                 edf_reader = pyedflib.EdfReader(filepath)
             except Exception as open_exc:
+                # pyedflib hides an OS refusal (EACCES, EIO) behind its own
+                # errno-less message; recover the real OSError so the handler
+                # below propagates it as the host condition it is.
+                raise_host_open_error(filepath, open_exc)
                 fallback_reason = classify_pyedflib_error(open_exc)
                 if fallback_reason is None:
                     raise

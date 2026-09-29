@@ -137,6 +137,28 @@ def classify_pyedflib_error(exc: Exception) -> str | None:
     return None
 
 
+def raise_host_open_error(filepath: str, reader_exc: Exception) -> None:
+    """Raise the OS's own error when the host, not the file, stopped pyedflib opening it.
+
+    pyedflib reports every ``open()`` the operating system refuses on an existing
+    file (``EACCES``, ``EIO``, a stale network handle, ...) as ``OSError(123,
+    "... was found but can't be accessed ...")``, dropping the real ``errno``, so
+    that failure could not be told apart from a problem with the file. Re-opening
+    the file here recovers the real ``OSError``; when it is a host condition (see
+    :func:`~biosigio.exceptions.is_host_condition`) it is raised, chained from
+    ``reader_exc``, and a caller then propagates it unchanged instead of typing
+    it. Returns normally when the file opens, or fails for another reason.
+    """
+    from ..exceptions import is_host_condition
+
+    try:
+        with open(filepath, "rb") as fh:
+            fh.read(1)
+    except OSError as os_err:
+        if is_host_condition(os_err):
+            raise os_err from reader_exc
+
+
 # --- Minimal, tolerant EDF/BDF header probe -----------------------------------
 # pyedflib refuses to open these files at all, so its own (correct, but strict)
 # header parser is unavailable to us. This probe reads the fixed-width ASCII

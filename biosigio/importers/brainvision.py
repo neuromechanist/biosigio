@@ -19,7 +19,12 @@ from collections.abc import Iterator
 import pandas as pd
 
 from ..core.emg import Recording
-from ..exceptions import BiosigIOError, classify_read_error, is_resource_exhaustion
+from ..exceptions import (
+    BiosigIOError,
+    classify_read_error,
+    is_host_condition,
+    is_resource_exhaustion,
+)
 from ._mne_common import raw_to_recording, require_mne
 from .base import BaseImporter
 
@@ -178,8 +183,9 @@ def resolved_vhdr(vhdr_path: str, *, substitutions: dict | None = None) -> Itera
     Raises:
         BrainVisionHeaderRecoveryError: The siblings exist but no header encoding
             can spell their paths (see the class).
-        OSError: Reading the header failed with resource exhaustion, or writing
-            the patched copy failed; both are host conditions, raised unchanged.
+        OSError: Reading the header failed with a host condition (see
+            :func:`~biosigio.exceptions.is_host_condition`), or writing the
+            patched copy failed; both are raised unchanged.
     """
     directory = os.path.dirname(os.path.abspath(vhdr_path))
     stem = os.path.splitext(os.path.abspath(vhdr_path))[0]
@@ -194,8 +200,9 @@ def resolved_vhdr(vhdr_path: str, *, substitutions: dict | None = None) -> Itera
         read_error = err
     if content is None:
         assert read_error is not None  # content stays None only when open/read raised
-        if is_resource_exhaustion(read_error):
-            # The host, not the header: raised as-is so a caller can retry.
+        if is_host_condition(read_error):
+            # The host, not the header (resource exhaustion, EACCES, EIO, a stale
+            # network handle): raised as-is so a caller can retry.
             raise read_error
         # Unreadable header: hand MNE the original path and let it raise the real
         # read error, typed by the caller exactly as before this resolver existed.
@@ -358,7 +365,7 @@ class BrainVisionImporter(BaseImporter):
         mne = require_mne()
         # The resolver sits OUTSIDE the classifying try on purpose: what it can
         # raise is a failure to write the patched temporary header (ENOSPC,
-        # EROFS, EACCES, quota), resource exhaustion while reading the header, or
+        # EROFS, EACCES, quota), a host condition while reading the header, or
         # BrainVisionHeaderRecoveryError (a sibling path no header can spell).
         # Each is a host condition, not a property of the recording, and must
         # propagate as-is rather than become a typed (possibly permanent) read

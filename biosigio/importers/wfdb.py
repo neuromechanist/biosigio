@@ -3,7 +3,12 @@ import os
 import wfdb
 
 from ..core.emg import Recording
-from ..exceptions import FileReadError, classify_read_error, is_resource_exhaustion
+from ..exceptions import (
+    FileReadError,
+    classify_read_error,
+    is_host_condition,
+    is_resource_exhaustion,
+)
 
 # import numpy as np # Keep commented out until needed
 # from typing import List, Dict # Keep commented out until needed
@@ -69,7 +74,9 @@ class WFDBImporter(BaseImporter):
             # Everything raised while wfdb parses the record is about the file:
             # wfdb reports a malformed header as HeaderSyntaxError (a ValueError),
             # but also as a bare TypeError, IndexError or KeyError, and a
-            # truncated signal file as ValueError. Typed like every other importer.
+            # truncated signal file as ValueError. Typed like every other importer;
+            # a host I/O error (EACCES, EIO, ...) is re-raised unchanged by
+            # classify_read_error (see biosigio.exceptions.is_host_condition).
             raise classify_read_error(e, filepath) from e
 
         try:
@@ -171,7 +178,8 @@ class WFDBImporter(BaseImporter):
                 # condition, not an annotation problem -- swallowing it into a
                 # metadata note would return a "successful" Recording and hide
                 # the real cause (see biosigio.exceptions.is_resource_exhaustion).
-                if is_resource_exhaustion(ann_e):
+                # The same holds for a host I/O error (EACCES, EIO) on the .atr.
+                if is_host_condition(ann_e):
                     raise
                 # Other errors during annotation reading are warnings/metadata entries
                 rec.set_metadata("annotation_error", f"Error reading annotations: {str(ann_e)}")

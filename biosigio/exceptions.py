@@ -169,19 +169,70 @@ def is_resource_exhaustion(exc: BaseException) -> bool:
     return False
 
 
+# Host I/O conditions: the operating system refused or failed an operation for a
+# reason that belongs to this host (its permissions, its disks, its network
+# mounts), not to the bytes of the recording. EACCES/EPERM: the process may not
+# read the file (a mount or ownership problem). EIO: the device failed the read.
+# ENOSPC/EDQUOT/EROFS: a temporary copy could not be written. ETIMEDOUT/ESTALE:
+# a network filesystem timed out or its handle went stale. Another host (or the
+# same one later) can read the file, so none of these may become a typed error.
+_HOST_IO_ERRNOS = frozenset(
+    code
+    for code in (
+        errno.EACCES,
+        errno.EPERM,
+        errno.EIO,
+        errno.ENOSPC,
+        errno.EROFS,
+        getattr(errno, "EDQUOT", None),  # absent on Windows
+        errno.ETIMEDOUT,
+        getattr(errno, "ESTALE", None),  # absent on Windows
+    )
+    if code is not None
+)
+
+
+def is_host_condition(exc: BaseException) -> bool:
+    """True when ``exc`` reflects the host, not the file being read.
+
+    A superset of :func:`is_resource_exhaustion`: also true when ``exc``, or an
+    exception it chains to (``__cause__``, else ``__context__``, up to
+    :data:`_MAX_CHAIN_DEPTH` links), is an ``OSError`` whose ``errno`` is a host
+    I/O condition: ``EACCES``, ``EPERM``, ``EIO``, ``ENOSPC``, ``EROFS``,
+    ``EDQUOT``, ``ETIMEDOUT`` or ``ESTALE``.
+
+    :func:`classify_read_error` re-raises any such exception unchanged instead of
+    typing it, so a caller that treats typed errors as permanent file failures
+    retries these instead. An ``OSError`` without an ``errno`` (a reader that
+    reports a format problem as ``OSError("...")``) is not a host condition.
+    """
+    if is_resource_exhaustion(exc):
+        return True
+    seen: BaseException | None = exc
+    for _ in range(_MAX_CHAIN_DEPTH):
+        if seen is None:
+            return False
+        if isinstance(seen, OSError) and seen.errno in _HOST_IO_ERRNOS:
+            return True
+        seen = seen.__cause__ or seen.__context__
+    return False
+
+
 def classify_read_error(exc: Exception, filepath: str = "") -> BiosigIOError | NoReturn:
-    """Re-raises ``exc`` as-is when it is resource exhaustion (see
-    :func:`is_resource_exhaustion`); otherwise maps a low-level read failure to
-    a typed biosigIO error with a stable code.
+    """Re-raises ``exc`` as-is when it is a host condition (see
+    :func:`is_host_condition`); otherwise maps a low-level read failure to a
+    typed biosigIO error with a stable code.
 
     Importers call this in their ``except`` and ``raise ... from exc`` the result,
     so the *why* is decided once, where the format context lives. An exception
     that is already a :class:`BiosigIOError` is returned unchanged.
 
-    The resource-exhaustion re-raise is defence in depth: a caller that calls
-    this directly, without its own pre-check guard, is still safe -- see the
-    importers, which all guard *before* calling this, so the common path never
-    even reaches here for a MemoryError.
+    The host-condition re-raise lives here, not at each call site, so no importer
+    can forget it: every path that would type an exception goes through this
+    function, and an exception it re-raises keeps its own type, traceback and
+    chain. Resource exhaustion is additionally guarded by the importers *before*
+    calling this; host I/O errors (``EACCES``, ``EIO``, ``ENOSPC``, ...) rely on
+    this check alone.
 
     The matching is deliberately reader-agnostic (MNE and pyedflib phrase the same
     condition differently); unmatched failures fall through to :class:`FileReadError`
@@ -189,7 +240,7 @@ def classify_read_error(exc: Exception, filepath: str = "") -> BiosigIOError | N
     """
     if isinstance(exc, BiosigIOError):
         return exc
-    if is_resource_exhaustion(exc):
+    if is_host_condition(exc):
         raise exc
     msg = str(exc)
     low = msg.lower()
