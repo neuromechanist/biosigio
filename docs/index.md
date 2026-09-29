@@ -84,6 +84,8 @@ This documentation is organized as follows:
 - **API Reference**: Complete documentation of classes and methods
 - **Examples**: Practical examples for various use cases
 
+What changed in each release is recorded in the [changelog](https://github.com/neuromechanist/biosigio/blob/main/CHANGELOG.md).
+
 ## License
 
 This project is licensed under the BSD 3-Clause License. 

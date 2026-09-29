@@ -137,7 +137,7 @@ Homepage = "https://github.com/neuromechanist/biosigio"
 Documentation = "https://neuromechanist.github.io/biosigio/"
 Repository = "https://github.com/neuromechanist/biosigio"
 Issues = "https://github.com/neuromechanist/biosigio/issues"
-Changelog = "https://github.com/neuromechanist/biosigio/releases"
+Changelog = "https://github.com/neuromechanist/biosigio/blob/main/CHANGELOG.md"
 
 [tool.setuptools.packages.find]
 where = ["."]
