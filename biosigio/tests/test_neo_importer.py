@@ -18,7 +18,7 @@ from biosigio import Recording
 neo = pytest.importorskip("neo", reason="neo importer requires the optional 'neo' extra")
 import quantities as pq  # noqa: E402  (only importable once neo is present)
 
-from biosigio.importers.neo import NeoImporter, _channel_names, _unique_label  # noqa: E402
+from biosigio.importers.neo import NeoImporter, _channel_names  # noqa: E402
 
 
 def _write_block(path, streams, *, events=None, epochs=None):
@@ -149,13 +149,6 @@ def test_select_no_signals_rejected():
         NeoImporter._select_streams([], None, "f")
 
 
-def test_unique_label_terminates_on_deep_collisions():
-    assert _unique_label("ch", set()) == "ch"
-    assert _unique_label("ch", {"ch"}) == "ch_0"
-    # The adversarial set that made the old two-step fallback spin forever.
-    assert _unique_label("ch", {"ch", "ch_0", "ch_0_0"}) == "ch_1"
-
-
 def test_channel_names_from_annotations_else_generated():
     sig = _sig("amp", 10, 3, 1000.0)
     sig.array_annotate(channel_names=np.array(["L1", "L2", "L3"]))
@@ -176,6 +169,25 @@ def test_merged_stream_channel_names_are_unique(tmp_path):
     rec = NeoImporter().load(str(path))
     assert len(rec.channels) == 2
     assert len(set(rec.channels)) == 2  # no duplicate labels
+
+
+def test_merged_stream_suffix_never_takes_a_genuine_name(tmp_path):
+    """A later stream's genuine name is not taken by an earlier stream's suffix.
+
+    Streams ``x``, ``x`` and ``x_0`` (one channel each) generate ``x_0``, ``x_0``
+    and ``x_0_0``. The repeat becomes ``x_0_1``; the third stream keeps
+    ``x_0_0`` rather than being pushed to ``x_0_0_0``.
+    """
+    blocks = [np.full((50, 1), float(v)) for v in (1, 2, 3)]
+    path = _write_block(
+        tmp_path / "rec.mat",
+        [(name, b, 1000.0, "uV", 0.0) for name, b in zip(["x", "x", "x_0"], blocks, strict=True)],
+    )
+    rec = NeoImporter().load(str(path))
+    assert list(rec.channels) == ["x_0", "x_0_1", "x_0_0"]
+    for label, value in zip(rec.channels, (1, 2, 3), strict=True):
+        assert (rec.signals[label].to_numpy() == value).all()
+    assert rec.metadata["channel_labels_deduplicated"] == {"x_0_1": "x_0"}
 
 
 # --- event / epoch alignment (real in-memory neo Segment, no mocks) ---
