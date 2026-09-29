@@ -50,6 +50,8 @@ which keep the full notes; releases older than 1.1.0 are listed there only.
   used by the EDF/BDF importer, the tolerant EDF reader, the streaming EDF source,
   the WFDB importer (repeated signal names) and the Zarr importer
   (stores published before this release that repeat a label).
+- The EEGLAB importer keeps its own `_2`, `_3` suffix scheme for repeated labels,
+  while EDF/BDF, WFDB and Zarr re-import use the MNE-style `-0`, `-1` suffixes above.
 
 ### Known issues
 
