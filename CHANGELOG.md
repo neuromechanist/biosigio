@@ -66,10 +66,12 @@ which keep the full notes; releases older than 1.1.0 are listed there only.
   exactly as the BrainVision importer does, so a corrupt header raises a `FileReadError`
   (or subclass) instead of a raw MNE exception.
   On both paths, a message that quoted the temporary header copy names the real `.vhdr` instead.
-- BrainVision: when the same-stem siblings exist but no header encoding can spell their path,
-  the read raises `BrainVisionHeaderRecoveryError` explaining that,
-  instead of reading the stale header and failing on a missing file.
-  It is not a `BiosigIOError`, because the recording itself is readable.
+- BrainVision: the temporary header copy names the files it reads by fixed ASCII names
+  (`data<ext>`, `marker.vmrk`) staged beside it as a symbolic link, else a hard link, else a copy,
+  so it keeps the header's own codepage and never has to spell the dataset's directory.
+  A recording under a directory the codepage cannot spell, even one whose name is not valid UTF-8, is read.
+  The streaming Zarr source keeps the staged files until it is closed.
+  A read error that quoted a staged file names the dataset file it stood for.
 - WFDB: a record `wfdb` cannot parse (malformed header, truncated or missing signal file,
   or a repeated signal name that cannot be suffixed) raises a typed `FileReadError`
   instead of a plain `ValueError`.
@@ -99,7 +101,7 @@ which keep the full notes; releases older than 1.1.0 are listed there only.
   `eeglab_fdt_recovered` (`{"referenced": ..., "used": ...}`).
   Each key appears only when it applies; a Zarr store without these keys reads exactly as before.
 - BrainVision sibling lookup falls back to a case-insensitive match (`<stem>.EEG`, `<stem>.VMRK`)
-  when exactly one file matches; an upper-case marker file is read through a lower-case temporary copy,
+  when exactly one file matches; an upper-case marker file is staged under a lower-case name,
   because MNE selects its marker reader by the exact `.vmrk` suffix.
 - New warnings replace silent behavior: an EEGLAB v7.3 event dropped for an empty type or latency
   and a channel given the default label for an empty label are counted,
