@@ -587,7 +587,10 @@ class EDFExporter:
                 channel_info_list.append(ch_dict)
 
                 # Add to BIDS-compliant channels.tsv data
-                channels_tsv_data["name"].append(ch_name)
+                # BIDS matches a channels.tsv row to the data file by the label
+                # the file stores, so name the row that way; the full label only
+                # matched on channels that fit the 16-character field.
+                channels_tsv_data["name"].append(edf_labels[ch_index])
 
                 # Channels carry a validated channel_type from the modality
                 # vocabulary, so use it directly for channels.tsv. This preserves
