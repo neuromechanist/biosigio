@@ -10,7 +10,15 @@ Entries before 1.2.9 are condensed from the
 [GitHub Releases](https://github.com/neuromechanist/biosigio/releases),
 which keep the full notes; releases older than 1.1.0 are listed there only.
 
-## [Unreleased]
+## [1.2.10] - 2026-09-29
+
+**This patch release contains breaking changes.**
+It is numbered 1.2.10 rather than 1.3.0 by the maintainer's decision, as 1.2.9 was;
+read Breaking before upgrading.
+The breaking changes concern repeated channel labels
+(in a file, in a `select_channels` call, or produced by EDF/BDF's 16-character label field)
+and `channels.tsv` names that differ from the data file's only in case;
+data without either imports and exports as in 1.2.9.
 
 ### Breaking
 
@@ -24,8 +32,14 @@ which keep the full notes; releases older than 1.1.0 are listed there only.
   (XDF streams `[Ch1, Ch1]` and `[Ch1_1]`, an EEGLAB `Fz, Fz, Fz_2`, neo streams that repeat `x` and `x_0`),
   a label such as `Ch1_1` now points at a different signal than in 1.2.9:
   it is the channel really named `Ch1_1`, where 1.2.9 gave that label to the copy of `Ch1`.
+  Likewise, an XDF data channel named like a stream's `{stream_name}_LSL_timestamps` channel now keeps that label,
+  where 1.2.9 overwrote it with the timestamps; the timestamps become `{stream_name}_LSL_timestamps_1`.
   A Zarr store regenerated from such a file therefore swaps data under an existing channel name.
   Inputs without such a collision import exactly as before.
+- EDF/BDF export writes channels whose labels collide once truncated to 16 characters
+  under numbered labels (`Mini sensor 10-0`, `Mini sensor 10-1`; see Fixed),
+  and names their `_channels.tsv` rows the same way,
+  so such a file exported by 1.2.10 carries different channel labels and sidecar names than one exported by 1.2.9.
 - `apply_channels_tsv` and `apply_channels_tsv_to_stream` now apply a sidecar row that differs from its channel only in case
   (see Fixed, [#136](https://github.com/neuromechanist/biosigio/issues/136)).
   In 1.2.9 such a row was silently skipped; now its type and unit are applied, and a unit that differs from the data file's CONVERTS the signal,
@@ -47,7 +61,8 @@ which keep the full notes; releases older than 1.1.0 are listed there only.
   and pushing that channel to `Fz_2_2`.
   No channel was dropped before; a `channels.tsv` row for `Fz_2` described the wrong one
   ([#134](https://github.com/neuromechanist/biosigio/issues/134)).
-- neo: the same rule for names repeated across merged streams (`x_0`, `x_0_1`, `x_0_0` rather than `x_0`, `x_0_0`, `x_0_0_0`).
+- neo: the same rule for names repeated across merged streams:
+  streams naming `x_0`, `x_0` and `x_0_0` import as `x_0`, `x_0_1`, `x_0_0` rather than `x_0`, `x_0_0`, `x_0_0_0`.
 - Delsys Trigno: a file whose `Label:` lines repeat a label keeps every channel,
   where 1.2.9 imported only the first column under that label.
   The n-th column headed with the label takes the n-th `Label:` line's rate and unit;
@@ -350,7 +365,7 @@ First release since 1.1.3; the internal 1.1.4 and 1.1.5 bumps are folded in.
 - EEGLAB `.set` files with the signal matrix in a sibling `.fdt` file (#94).
 - `bids.apply_events_tsv` to load a BIDS `_events.tsv` into `rec.events`.
 
-[Unreleased]: https://github.com/neuromechanist/biosigio/compare/v1.2.9...HEAD
+[1.2.10]: https://github.com/neuromechanist/biosigio/compare/v1.2.9...v1.2.10
 [1.2.9]: https://github.com/neuromechanist/biosigio/compare/v1.2.8...v1.2.9
 [1.2.8]: https://github.com/neuromechanist/biosigio/compare/v1.2.7...v1.2.8
 [1.2.7]: https://github.com/neuromechanist/biosigio/compare/v1.2.6...v1.2.7
