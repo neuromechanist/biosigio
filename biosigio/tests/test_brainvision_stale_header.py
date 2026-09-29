@@ -9,15 +9,26 @@ Real tiny triplets are written by hand in each test. NO MOCKS.
 
 import os
 import pathlib
+import sys
 
 import numpy as np
 import pytest
 
-pytest.importorskip("mne", reason="BrainVision import requires the optional 'meg' extra (mne)")
+mne = pytest.importorskip(
+    "mne", reason="BrainVision import requires the optional 'meg' extra (mne)"
+)
 
 from biosigio import Recording  # noqa: E402
+from biosigio.exceptions import BiosigIOError, FileReadError  # noqa: E402
 from biosigio.exporters.zarr_stream import _open_stream_source  # noqa: E402
-from biosigio.importers.brainvision import resolved_vhdr  # noqa: E402
+from biosigio.importers.brainvision import (  # noqa: E402
+    HEADER_RECOVERED_KEY,
+    BrainVisionHeaderRecoveryError,
+    resolved_vhdr,
+)
+
+# MNE >= 1.13 recovers a stale MarkerFile= on its own; below that it does not.
+_MNE_RECOVERS_MARKER = tuple(int(p) for p in mne.__version__.split(".")[:2]) >= (1, 13)
 
 N_CH, N_SAMPLES, SFREQ = 3, 500, 250.0
 STEM = "sub-01_task-MOBAgame_eeg"
@@ -30,28 +41,31 @@ def _write_triplet(
     *,
     data_ext: str = ".eeg",
     newline: str = "\n",
-    codepage: str = "UTF-8",
+    codepage: str | None = "UTF-8",
     encoding: str = "utf-8",
     channel_names: tuple[str, ...] | None = None,
+    marker_ext: str = ".vmrk",
 ) -> tuple[str, np.ndarray]:
     """Write ``<STEM>.vhdr`` referencing ``data_ref``/``marker_ref``, plus the
-    correctly named ``<STEM><data_ext>`` and ``<STEM>.vmrk`` beside it.
+    correctly named ``<STEM><data_ext>`` and ``<STEM><marker_ext>`` beside it.
+    ``codepage=None`` leaves the ``Codepage=`` line out of both files.
 
     Returns the header path and the int16 data (channels x samples) written.
     """
+    codepage_line = [] if codepage is None else [f"Codepage={codepage}"]
     rng = np.random.default_rng(0)
     data = rng.integers(-1000, 1000, size=(N_CH, N_SAMPLES), dtype=np.int16)
     data.T.tofile(os.path.join(directory, STEM + data_ext))  # MULTIPLEXED
     vmrk = [
         "Brain Vision Data Exchange Marker File, Version 1.0",
         "[Common Infos]",
-        f"Codepage={codepage}",
+        *codepage_line,
         f"DataFile={data_ref}",
         "[Marker Infos]",
         "Mk1=Stimulus,S  1,125,1,0",
         "Mk2=Stimulus,S  2,250,1,0",
     ]
-    with open(os.path.join(directory, STEM + ".vmrk"), "w", encoding=encoding, newline="") as f:
+    with open(os.path.join(directory, STEM + marker_ext), "w", encoding=encoding, newline="") as f:
         f.write(newline.join(vmrk) + newline)
     names = channel_names or tuple(f"C{i + 1}é" for i in range(N_CH))
     channels = [f"Ch{i + 1}={name},,0.1,µV" for i, name in enumerate(names)]
@@ -59,7 +73,7 @@ def _write_triplet(
         "Brain Vision Data Exchange Header File Version 1.0",
         "; Écrit à la main",
         "[Common Infos]",
-        f"Codepage={codepage}",
+        *codepage_line,
         f"DataFile={data_ref}",
         f"MarkerFile={marker_ref}",
         "DataFormat=BINARY",
@@ -117,8 +131,19 @@ def test_matching_header_is_read_unchanged(tmp_path):
         ("s13_run2_060717.eeg", "s13_run2_060717.vmrk"),
         ("sub-01_task-MOBA_game_eeg.eeg", "sub-01_task-MOBA_game_eeg.vmrk"),
         # Only the marker is stale. MNE >= 1.13 recovers this itself, so the row
-        # exercises resolved_vhdr's marker patch only on MNE 1.12.x.
-        (f"{STEM}.eeg", "sub-01_task-MOBA_game_eeg.vmrk"),
+        # would pass with or without resolved_vhdr's marker patch there; it is
+        # skipped rather than reported as proof, and runs on MNE < 1.13 (the
+        # 1.12.x line NEMAR runs, pinned by a separate CI job).
+        pytest.param(
+            f"{STEM}.eeg",
+            "sub-01_task-MOBA_game_eeg.vmrk",
+            marks=pytest.mark.skipif(
+                _MNE_RECOVERS_MARKER,
+                reason=f"MNE {mne.__version__} recovers a stale MarkerFile= itself, so "
+                "this row cannot prove resolved_vhdr's marker patch; it runs on MNE < 1.13",
+            ),
+            id="marker-only",
+        ),
     ],
 )
 def test_stale_references_resolve_to_same_stem_siblings(tmp_path, data_ref, marker_ref):
@@ -164,7 +189,19 @@ def test_missing_sibling_still_errors(tmp_path):
         _open_stream_source(vhdr, None)
 
 
-@pytest.mark.parametrize("scratch", ["missing", "read-only"])
+@pytest.mark.parametrize(
+    "scratch",
+    [
+        "missing",
+        pytest.param(
+            "read-only",
+            marks=pytest.mark.skipif(
+                sys.platform == "win32",
+                reason="chmod(0o500) does not make a Windows directory unwritable",
+            ),
+        ),
+    ],
+)
 def test_temp_copy_failure_is_a_host_error_not_a_file_error(tmp_path, monkeypatch, scratch):
     """A temp-copy write that the OS refuses (here ENOENT/EACCES; ENOSPC, EROFS and
     quota take the same path) propagates as the raw OSError, never as a typed
@@ -237,15 +274,18 @@ def test_lone_cr_header_is_patched_line_by_line(tmp_path):
     assert patched == expected
 
 
-def test_unreadable_header_yields_original_without_chained_context(tmp_path):
+def test_unreadable_header_yields_original_without_chained_context(tmp_path, caplog):
     """A header the resolver cannot read is handed to MNE unchanged, and an error
     raised inside the block is not chained to the resolver's own OSError."""
     missing = str(tmp_path / "absent.vhdr")
-    with pytest.raises(RuntimeError) as info:
-        with resolved_vhdr(missing) as used:
-            assert used == missing
-            raise RuntimeError("raised by the caller")
+    with caplog.at_level("WARNING", logger="biosigio.importers.brainvision"):
+        with pytest.raises(RuntimeError) as info:
+            with resolved_vhdr(missing) as used:
+                assert used == missing
+                raise RuntimeError("raised by the caller")
     assert info.value.__context__ is None
+    # The swallowed OSError is logged with its errno, not dropped.
+    assert "ENOENT" in caplog.text and missing in caplog.text
     with pytest.raises(Exception, match="absent"):
         Recording.from_file(missing)
 
@@ -329,9 +369,13 @@ def test_concurrent_calls_use_distinct_temp_copies(tmp_path):
                     _assert_loaded(Recording.from_file(path), data)
             if index == 0:
                 assert not os.path.exists(path)
-                first_left.set()
         except BaseException as e:  # surfaced in the main thread below
             errors.append(e)
+        finally:
+            # Set however thread 0 ends, so a failure there fails the test at
+            # once instead of leaving thread 1 waiting out its timeout.
+            if index == 0:
+                first_left.set()
 
     threads = [threading.Thread(target=worker, args=(i,)) for i in range(2)]
     for t in threads:
@@ -342,3 +386,210 @@ def test_concurrent_calls_use_distinct_temp_copies(tmp_path):
     assert len(used) == 2
     assert os.path.dirname(used[0]) != os.path.dirname(used[1])
     assert not any(os.path.exists(p) for p in used)
+
+
+# --- recovery is recorded, not silent ------------------------------------------
+
+
+def test_recovery_is_logged_and_recorded_in_metadata(tmp_path, caplog):
+    """A successful stale-header read leaves a trace: an info log, and the
+    substituted names in the Recording's metadata, the streaming source's
+    metadata, and the Zarr store written from either."""
+    vhdr, data = _write_triplet(tmp_path, "old.eeg", "old.vmrk")
+    expected = {
+        "DataFile": {"referenced": "old.eeg", "used": f"{STEM}.eeg"},
+        "MarkerFile": {"referenced": "old.vmrk", "used": f"{STEM}.vmrk"},
+    }
+
+    with caplog.at_level("INFO", logger="biosigio.importers.brainvision"):
+        rec = Recording.from_file(vhdr)
+    _assert_loaded(rec, data)
+    assert rec.metadata[HEADER_RECOVERED_KEY] == expected
+    assert "old.eeg -> " + f"{STEM}.eeg" in caplog.text
+
+    source = _open_stream_source(vhdr, None)
+    try:
+        assert source.extra_metadata[HEADER_RECOVERED_KEY] == expected
+    finally:
+        source.close()
+
+    pytest.importorskip("zarr", reason="the store round trip needs the 'zarr' extra")
+    from biosigio import stream_to_zarr
+
+    streamed = stream_to_zarr(vhdr, str(tmp_path / "s.zarr"), bids_channels="off")
+    in_memory = rec.to_zarr(str(tmp_path / "m.zarr"))
+    for store in (streamed, in_memory):
+        assert Recording.from_file(store).metadata[HEADER_RECOVERED_KEY] == expected
+
+
+def test_matching_header_records_nothing(tmp_path):
+    vhdr, _ = _write_triplet(tmp_path, f"{STEM}.eeg", f"{STEM}.vmrk")
+    substitutions: dict = {}
+    with resolved_vhdr(vhdr, substitutions=substitutions) as used:
+        assert used == vhdr
+    assert substitutions == {}
+    assert HEADER_RECOVERED_KEY not in Recording.from_file(vhdr).metadata
+    source = _open_stream_source(vhdr, None)
+    try:
+        assert HEADER_RECOVERED_KEY not in source.extra_metadata
+    finally:
+        source.close()
+
+
+# --- case-insensitive sibling lookup -------------------------------------------
+
+
+def _case_sensitive(directory) -> bool:
+    probe = pathlib.Path(directory) / "CaseProbe"
+    probe.write_text("")
+    try:
+        return not (pathlib.Path(directory) / "caseprobe").exists()
+    finally:
+        probe.unlink()
+
+
+def test_upper_case_siblings_are_found(tmp_path):
+    """``X.EEG``/``X.VMRK`` beside ``X.vhdr`` are found on any filesystem (on a
+    case-sensitive one only through the case-insensitive fallback)."""
+    vhdr, data = _write_triplet(
+        tmp_path, "old.eeg", "old.vmrk", data_ext=".EEG", marker_ext=".VMRK"
+    )
+    _assert_loaded(Recording.from_file(vhdr), data)
+    _assert_streams(vhdr, data)
+    rec = Recording.from_file(vhdr)
+    recovered = rec.metadata[HEADER_RECOVERED_KEY]
+    assert recovered["DataFile"]["used"].lower() == f"{STEM}.eeg".lower()
+    assert recovered["MarkerFile"]["used"].lower() == f"{STEM}.vmrk".lower()
+    if _case_sensitive(tmp_path):
+        assert recovered["DataFile"]["used"] == f"{STEM}.EEG"
+
+
+def test_ambiguous_case_insensitive_siblings_are_not_guessed(tmp_path):
+    """Two files differing only in case: neither is chosen, so the header stays
+    unresolved and the read fails on the missing file it names."""
+    if not _case_sensitive(tmp_path):
+        pytest.skip("needs a case-sensitive filesystem to hold X.EEG and X.Eeg at once")
+    vhdr, data = _write_triplet(tmp_path, "old.eeg", f"{STEM}.vmrk", data_ext=".EEG")
+    data.T.tofile(tmp_path / f"{STEM}.Eeg")
+    substitutions: dict = {}
+    with resolved_vhdr(vhdr, substitutions=substitutions) as used:
+        assert used == vhdr
+    assert substitutions == {}
+    with pytest.raises(FileReadError, match="old.eeg"):
+        Recording.from_file(vhdr)
+
+
+# --- encodings the patched copy has to handle ----------------------------------
+
+
+def test_lone_cr_header_falls_back_to_utf8(tmp_path):
+    """Old-Mac ``\\r`` line endings AND a path the cp1252 codepage cannot spell:
+    the ``Codepage=`` rewrite finds the version line at the first CR.
+
+    MNE itself cannot parse a lone-CR header (it finds no ``[Common Infos]``
+    section even when every reference is correct), so the check is on the
+    bytes of the copy; the read then fails exactly as the unpatched header
+    would, as a typed error.
+    """
+    directory = tmp_path / "Ωμέγα"
+    directory.mkdir()
+    vhdr, _ = _write_triplet(
+        directory, "old.eeg", "old.vmrk", newline="\r", codepage="ANSI", encoding="cp1252"
+    )
+    original = open(vhdr, "rb").read().decode("cp1252")
+    with resolved_vhdr(vhdr) as used:
+        patched = open(used, "rb").read()
+    expected = (
+        original.replace("Codepage=ANSI", "Codepage=UTF-8")
+        .replace("DataFile=old.eeg", f"DataFile={directory / (STEM + '.eeg')}")
+        .replace("MarkerFile=old.vmrk", f"MarkerFile={directory / (STEM + '.vmrk')}")
+        .encode("utf-8")
+    )
+    assert patched == expected
+    assert b"\n" not in patched
+    with pytest.raises(FileReadError):
+        Recording.from_file(vhdr)
+
+
+def test_no_codepage_latin1_header_under_a_path_latin1_cannot_spell(tmp_path):
+    """No ``Codepage=`` line and bytes that are not UTF-8, so MNE decodes the
+    header as Latin-1; the Greek sibling path is not Latin-1, so the copy is
+    written as UTF-8. With no ``Codepage=`` to rewrite, MNE decodes that copy as
+    UTF-8 (its default), which reads every character back unchanged."""
+    directory = tmp_path / "Ωμέγα"
+    directory.mkdir()
+    vhdr, data = _write_triplet(directory, "old.eeg", "old.vmrk", codepage=None, encoding="latin-1")
+    original = open(vhdr, "rb").read()
+    with pytest.raises(UnicodeDecodeError):
+        original.decode("utf-8")  # the fixture really is not UTF-8
+    with resolved_vhdr(vhdr) as used:
+        patched = open(used, "rb").read()
+    expected = (
+        original.decode("latin-1")
+        .replace("DataFile=old.eeg", f"DataFile={directory / (STEM + '.eeg')}")
+        .replace("MarkerFile=old.vmrk", f"MarkerFile={directory / (STEM + '.vmrk')}")
+        .encode("utf-8")
+    )
+    assert patched == expected
+    assert b"Codepage" not in patched
+    rec = Recording.from_file(vhdr)
+    _assert_loaded(rec, data)
+    assert "C1é" in rec.channels
+    _assert_streams(vhdr, data)
+
+
+def _undecodable_dir(tmp_path) -> pathlib.Path:
+    """A directory whose name holds bytes that are not UTF-8, so Python spells it
+    with surrogate escapes that no codec can encode. Skips where the filesystem
+    refuses such a name (macOS APFS, Windows)."""
+    directory = tmp_path / os.fsdecode(b"raw-\xff\xfe")
+    try:
+        directory.mkdir()
+    except (OSError, UnicodeEncodeError) as err:
+        pytest.skip(f"this filesystem refuses a non-UTF-8 directory name ({err})")
+    return directory
+
+
+@pytest.mark.parametrize("codepage", ["UTF-8", None], ids=["utf8", "no-codepage"])
+def test_path_no_encoding_can_spell_raises_a_host_error(tmp_path, codepage):
+    """Siblings exist but not even UTF-8 can spell their path: a specific,
+    untyped error that says so, instead of handing MNE the stale header and
+    letting its FileNotFoundError be recorded as a permanent file failure."""
+    directory = _undecodable_dir(tmp_path)
+    vhdr, _ = _write_triplet(directory, "old.eeg", "old.vmrk", codepage=codepage)
+
+    with pytest.raises(BrainVisionHeaderRecoveryError, match="names missing files"):
+        with resolved_vhdr(vhdr):
+            pass
+    for read in (Recording.from_file, lambda p: _open_stream_source(p, None)):
+        with pytest.raises(BrainVisionHeaderRecoveryError) as info:
+            read(vhdr)
+        assert not isinstance(info.value, BiosigIOError)
+        assert "DataFile=old.eeg" in str(info.value)
+
+
+def test_header_read_exhaustion_is_raised_not_swallowed(tmp_path):
+    """Out of file descriptors while opening the header is the host, not the
+    header: it propagates as the raw OSError (retryable) instead of being
+    logged and handed to MNE. Real exhaustion, under a lowered fd limit."""
+    resource = pytest.importorskip("resource", reason="needs POSIX rlimits")
+    import errno
+
+    vhdr, _ = _write_triplet(tmp_path, "old.eeg", "old.vmrk")
+    soft, hard = resource.getrlimit(resource.RLIMIT_NOFILE)
+    held = []
+    resource.setrlimit(resource.RLIMIT_NOFILE, (min(soft, 256), hard))
+    try:
+        with pytest.raises(OSError) as info:
+            while True:  # use up every descriptor the lowered limit allows
+                held.append(open(os.devnull, "rb"))
+        assert info.value.errno == errno.EMFILE
+        with pytest.raises(OSError) as info:
+            with resolved_vhdr(vhdr):
+                pass
+        assert info.value.errno == errno.EMFILE
+        assert not isinstance(info.value, BiosigIOError)
+    finally:
+        for f in held:
+            f.close()
+        resource.setrlimit(resource.RLIMIT_NOFILE, (soft, hard))
