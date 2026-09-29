@@ -345,9 +345,21 @@ def test_v73_metadata_fields_extracted(tmp_path):
     assert rec.get_metadata("comments") == "synthesized fixture"
 
 
-def test_v73_non_eeg_top_level_raises_corrupt_file_error(tmp_path):
+def _assert_not_eeglab_error(path):
+    """The typed, terminal "not an EEGLAB dataset" error: a FileReadError, but
+    never CorruptFileError, since the HDF5 container itself is healthy."""
+    with pytest.raises(FileReadError) as info:
+        EEGLABImporter().load(path)
+    assert not isinstance(info.value, CorruptFileError)
+    assert type(info.value) is FileReadError
+    assert "is not an EEGLAB v7.3 dataset" in str(info.value)
+    assert "corrupt" not in str(info.value).lower()
+
+
+def test_v73_non_eeg_top_level_raises_not_eeglab_error(tmp_path):
     """A v7.3-magic file that isn't an EEGLAB set (no top-level `EEG` group)
-    raises the typed corrupt-file error instead of an unhandled crash."""
+    raises a typed read error, not an unhandled crash and not a corrupt-file
+    verdict on a valid HDF5 file."""
     path = str(tmp_path / "not_eeglab.set")
     inner_path = path + ".inner"
     with h5py.File(inner_path, "w") as f:
@@ -359,8 +371,7 @@ def test_v73_non_eeg_top_level_raises_corrupt_file_error(tmp_path):
         fh.write(_wrap_matlab_v73_header(body))
 
     assert _is_matlab_v73(path) is True  # magic still says v7.3
-    with pytest.raises(CorruptFileError):
-        EEGLABImporter().load(path)
+    _assert_not_eeglab_error(path)
 
 
 def test_v73_flat_root_struct_loads(tmp_path):
@@ -478,7 +489,7 @@ def test_v73_empty_top_level_chanlocs_or_event_loads(tmp_path, flat, empty_chanl
 
 
 def test_v73_flat_root_without_pnts_is_not_accepted(tmp_path):
-    """The flat-root guard needs pnts too: nbchan/srate/data alone stay corrupt."""
+    """The flat-root guard needs pnts too: nbchan/srate/data alone are not a dataset."""
     path = str(tmp_path / "no_pnts.set")
     inner_path = path + ".inner"
     with h5py.File(inner_path, "w") as f:
@@ -491,13 +502,12 @@ def test_v73_flat_root_without_pnts_is_not_accepted(tmp_path):
     with open(path, "wb") as fh:
         fh.write(_wrap_matlab_v73_header(body))
 
-    with pytest.raises(CorruptFileError):
-        EEGLABImporter().load(path)
+    _assert_not_eeglab_error(path)
 
 
-def test_v73_root_without_core_fields_raises_corrupt_file_error(tmp_path):
-    """A root with some struct-like fields but not all of nbchan/srate/data
-    is neither layout, so it keeps the typed corrupt-file error."""
+def test_v73_root_without_core_fields_raises_not_eeglab_error(tmp_path):
+    """A root with some struct-like fields but not all of nbchan/srate/pnts/data
+    is neither layout, so it raises the typed not-an-EEGLAB-dataset error."""
     path = str(tmp_path / "partial_root.set")
     inner_path = path + ".inner"
     with h5py.File(inner_path, "w") as f:
@@ -509,8 +519,7 @@ def test_v73_root_without_core_fields_raises_corrupt_file_error(tmp_path):
     with open(path, "wb") as fh:
         fh.write(_wrap_matlab_v73_header(body))
 
-    with pytest.raises(CorruptFileError):
-        EEGLABImporter().load(path)
+    _assert_not_eeglab_error(path)
 
 
 def test_v73_sample_values_round_trip_exactly(tmp_path):
