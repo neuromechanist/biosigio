@@ -8,6 +8,7 @@ MNE exposes as annotations) are read into ``Recording.events``.
 """
 
 import contextlib
+import logging
 import os
 import re
 import tempfile
@@ -20,12 +21,16 @@ from ..exceptions import classify_read_error, is_resource_exhaustion
 from ._mne_common import raw_to_recording, require_mne
 from .base import BaseImporter
 
+logger = logging.getLogger(__name__)
+
 # ``DataFile=`` / ``MarkerFile=`` lines of the header's [Common Infos] section.
 _FILE_REF = re.compile(r"^(\s*)(DataFile|MarkerFile)(\s*=\s*)(.*?)(\s*)$", re.IGNORECASE)
 # Split after each ``\n`` and after a lone ``\r`` (old Mac line endings), keeping
 # the ending on its line. Unlike ``str.splitlines`` this never breaks on ``\x85``,
 # ``\x0b``, ``\x0c`` or `` ``, which a Latin-1/cp1252 header can carry inside a
 # channel name and which MNE's own line reading (``StringIO``) does not split on.
+# The value of a ``Codepage=`` key, up to (not including) its line ending.
+_CODEPAGE_VALUE = re.compile(r"(Codepage\s*=\s*)[^\r\n]*", re.IGNORECASE)
 _LINE_BREAK = re.compile(r"(?<=\n)|(?<=\r)(?!\n)")
 # Same-stem siblings tried for each key, in order (``.dat`` is the legacy data name).
 # MarkerFile is patched too: MNE 1.13 recovers a stale MarkerFile= itself, but the
@@ -48,6 +53,19 @@ def _header_encoding(settings: bytes) -> str:
     return codepage
 
 
+def _declare_utf8(text: str) -> str:
+    """``text`` with its ``Codepage=`` value set to ``UTF-8`` (line ending kept).
+
+    Only the first ``Codepage=`` after the version line is rewritten, the one MNE
+    reads. With none present MNE already decodes UTF-8, so nothing is added.
+    """
+    first, sep, rest = text.partition("\n")
+    if not sep:  # lone-CR header: the version line ends at the first CR
+        first, sep, rest = text.partition("\r")
+    rest = _CODEPAGE_VALUE.sub(r"\g<1>UTF-8", rest, count=1)
+    return first + sep + rest
+
+
 @contextlib.contextmanager
 def resolved_vhdr(vhdr_path: str) -> Iterator[str]:
     """Yield a ``.vhdr`` path whose ``DataFile=``/``MarkerFile=`` point at files that exist.
@@ -58,7 +76,9 @@ def resolved_vhdr(vhdr_path: str) -> Iterator[str]:
     defect :meth:`EEGLABImporter._read_fdt` resolves for ``.fdt``). When a referenced
     file is missing and that same-stem sibling exists, a patched copy of the header
     (original encoding and line endings; only those two keys rewritten, to absolute
-    paths) is written to a temporary directory and yielded instead. Otherwise the
+    paths) is written to a temporary directory and yielded instead; when the header's
+    codepage cannot spell such a path, the copy is written as UTF-8 with its
+    ``Codepage=`` rewritten to match. Otherwise the
     original path is yielded unchanged, so a good header and an unrecoverable one
     behave exactly as MNE reads them. The dataset files are never modified.
 
@@ -111,10 +131,23 @@ def resolved_vhdr(vhdr_path: str) -> Iterator[str]:
     if not stale:
         yield vhdr_path
         return
+    text = "".join(lines)
+    patched: bytes | None = None
     try:
-        patched = "".join(lines).encode(encoding)
+        patched = text.encode(encoding)
     except UnicodeEncodeError:
-        # An absolute path the header's codepage cannot spell: read it as today.
+        # An absolute path the header's codepage cannot spell (e.g. a Greek or CJK
+        # directory under a cp1252 header): write the copy as UTF-8 instead and
+        # declare it, which every character of the decoded header can be spelled in.
+        with contextlib.suppress(UnicodeEncodeError):
+            patched = _declare_utf8(text).encode("utf-8")
+    if patched is None:
+        # Not even UTF-8 can spell it (an undecodable, surrogate-escaped path).
+        logger.warning(
+            "BrainVision header %s names missing files, but the same-stem siblings' "
+            "paths cannot be written into a header; reading it unpatched.",
+            vhdr_path,
+        )
         yield vhdr_path
         return
     # A failure to create or write the copy propagates unchanged (see
