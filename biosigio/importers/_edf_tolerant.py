@@ -78,6 +78,7 @@ from __future__ import annotations
 
 import os
 import re
+from collections import Counter
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -425,15 +426,19 @@ def _events_from_mne_annotations(raw) -> pd.DataFrame:
     return events
 
 
-def _is_mne_name_for(name: str, label: str) -> bool:
+def _is_mne_name_for(name: str, label: str, repeated: bool) -> bool:
     """Whether ``name`` is what MNE calls a header channel labelled ``label``.
 
-    Either the label itself or MNE's exact rename of a repeated label,
-    ``<label>-<n>`` or ``<label>-<a..z>`` (``_unique_channel_names``). Any other
-    ``<label>-...`` name is a DIFFERENT channel that happens to share the prefix
-    (``A`` and ``A-B``), so a prefix test would accept a reordered pair.
+    The label itself, or, only when ``label`` is ``repeated`` in the header, MNE's
+    exact rename of a repeated label, ``<label>-<n>`` or ``<label>-<a..z>``
+    (``_unique_channel_names``). MNE renames only labels that repeat, so for a
+    unique label any ``<label>-...`` name is a DIFFERENT channel that happens to
+    share the prefix (``A`` and ``A-b``), and a prefix test would accept a
+    reordered pair.
     """
-    return name == label or re.fullmatch(re.escape(label) + r"-(\d+|[a-z])", name) is not None
+    if name == label:
+        return True
+    return repeated and re.fullmatch(re.escape(label) + r"-(\d+|[a-z])", name) is not None
 
 
 def _check_channel_pairing(filepath: str, mne_names: list[str], header_labels: list[str]) -> None:
@@ -446,8 +451,9 @@ def _check_channel_pairing(filepath: str, mne_names: list[str], header_labels: l
     """
     from ..exceptions import FileReadError
 
+    counts = Counter(header_labels)
     for name, label in zip(mne_names, header_labels, strict=True):
-        if not _is_mne_name_for(name, label):
+        if not _is_mne_name_for(name, label, repeated=counts[label] > 1):
             raise FileReadError(
                 f"{filepath}: fallback reader could not match channel {name!r} "
                 f"read by MNE back to header channel {label!r} at the same position"
