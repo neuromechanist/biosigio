@@ -59,3 +59,39 @@ jobs:
         files: ./coverage.xml
         fail_ci_if_error: true
         token: ${{ secrets.CODECOV_TOKEN }}
+
+  # The main matrix resolves the newest MNE, which (>= 1.13) recovers a stale
+  # BrainVision MarkerFile on its own and so hides whether our patch works.
+  # Pin MNE to the declared floor (dev extra: mne>=1.12) and to 1.12.1, the
+  # version the converter runs, and rerun the tests that depend on it.
+  test-mne-floor:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        mne-version: ["1.12.0", "1.12.1"]
+
+    steps:
+    - uses: actions/checkout@v6
+
+    - name: Install uv
+      uses: astral-sh/setup-uv@v7
+      with:
+        enable-cache: true
+        cache-dependency-glob: "pyproject.toml"
+
+    - name: Set up Python 3.12
+      run: uv python install 3.12
+
+    - name: Create venv and install dependencies (mne==${{ matrix.mne-version }})
+      run: |
+        uv venv --python 3.12
+        uv pip install -e ".[dev]" "mne==${{ matrix.mne-version }}"
+        uv run python -c "import mne; assert mne.__version__ == '${{ matrix.mne-version }}', mne.__version__"
+
+    - name: Run MNE-floor-sensitive tests
+      run: |
+        uv run pytest --no-cov \
+          biosigio/tests/test_brainvision_stale_header.py \
+          biosigio/tests/test_edf_duplicate_labels.py \
+          biosigio/tests/test_eeglab_v73_importer.py \
+          biosigio/tests/test_zarr_stream_channels_tsv.py
