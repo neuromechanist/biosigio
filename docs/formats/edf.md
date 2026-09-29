@@ -108,11 +108,29 @@ not defaulted to empty strings, since biosigIO does not re-implement
 `pyedflib`'s own sub-parsing of those two free-text fields for the fallback
 path.
 
-A file with two on-disk channels sharing the same label is also not covered:
-MNE renames the second one to keep channel names unique, which the header
-probe (independent of MNE by design) cannot predict, so this fails loud with
-a clear error rather than silently pairing the wrong header row with the
-wrong channel's data.
+A file with two on-disk channels sharing the same label is covered too.
+MNE renames the repeats (`EEG-0`, `EEG-1`), so the fallback pairs each channel
+with its header row by position rather than by label: MNE lists the signals in
+header order, minus the EDF+/BDF+ annotations channel. Each pairing is still
+checked by name, and a channel that cannot be paired fails loud rather than
+taking another row's scaling. The recovered channels carry the same suffixed
+labels a normal read produces (see [Repeated channel labels](#repeated-channel-labels)).
+
+## Repeated channel labels
+
+EDF does not require unique labels; CHB-MIT, for example, declares `T8-P8`
+twice and uses `-` for several unused inputs. A `Recording` is keyed by label,
+so every occurrence of a repeated label gets a running suffix, the same way
+MNE names them: `T8-P8-0`, `T8-P8-1`. A suffix that would collide with an
+existing label falls through to `-a`, `-b`, and so on. A warning names the
+repeated labels. The in-memory importer, the streaming Zarr export and the
+tolerant fallback all name the channels of one file identically, so a
+`channels.tsv` written by MNE-BIDS matches by name.
+
+For a single repeated label the names match MNE's exactly. When several
+repeated labels interact (one label's suffixed name colliding with another's),
+biosigIO resolves them in first-occurrence order, which is deterministic;
+MNE's order is not guaranteed, so the two can differ in that case.
 
 ## Exporter Implementation
 
