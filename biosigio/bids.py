@@ -379,10 +379,82 @@ def resolve_channels_tsv(
     return bids_channels
 
 
+# Report key listing the sidecar rows matched to a channel only by ignoring case,
+# as ``{sidecar_name: channel_label}``. Present only when there was such a match,
+# so a report for a sidecar that matched exactly is unchanged.
+_CASE_MATCHED = "matched_case_insensitive"
+
+
+def _match_sidecar_names(
+    row_names: list[str], labels: list[str], origin: str
+) -> tuple[dict[str, str], dict[str, str]]:
+    """Map each ``channels.tsv`` row name to the channel label it describes.
+
+    A row matches the channel of exactly its name first. A row with no exact
+    match falls back to ignoring case (``Fp1-F7`` for an EDF header's ``FP1-F7``,
+    as CHB-MIT writes them) only when that is unambiguous: exactly one channel
+    label casefolds to the row's name, no row names that channel exactly, and no
+    other unmatched row casefolds to it too. Anything else stays unmatched, the
+    way every non-exact row used to, and an ambiguous row is warned about.
+
+    Shared by :func:`apply_channels_tsv` and :func:`apply_channels_tsv_to_stream`
+    so the two export paths match the same rows to the same channels.
+
+    Args:
+        row_names: The sidecar's ``name`` values, stripped, in file order.
+        labels: The recording's channel labels (a streaming source may repeat one).
+        origin: The sidecar's path, or ``<DataFrame>``, for log messages.
+
+    Returns:
+        ``(matches, case_matches)``: ``{row_name: channel_label}`` for every row
+        that describes a channel, and the subset matched only by ignoring case.
+    """
+    distinct_labels = list(dict.fromkeys(labels))
+    label_set = set(distinct_labels)
+    rows = list(dict.fromkeys(row_names))
+    matches = {name: name for name in rows if name in label_set}
+    unmatched = [name for name in rows if name not in matches]
+
+    labels_by_fold: dict[str, list[str]] = {}
+    for label in distinct_labels:
+        labels_by_fold.setdefault(label.casefold(), []).append(label)
+    rows_by_fold: dict[str, list[str]] = {}
+    for name in unmatched:
+        rows_by_fold.setdefault(name.casefold(), []).append(name)
+
+    case_matches: dict[str, str] = {}
+    for name in unmatched:
+        candidates = labels_by_fold.get(name.casefold(), [])
+        if not candidates:
+            continue
+        rivals = rows_by_fold[name.casefold()]
+        if len(candidates) == 1 and candidates[0] not in matches.values() and len(rivals) == 1:
+            matches[name] = case_matches[name] = candidates[0]
+            logging.info(
+                "channels.tsv row %r matches channel %r only when case is ignored; "
+                "applying it to that channel: %s",
+                name,
+                candidates[0],
+                origin,
+            )
+        else:
+            logging.warning(
+                "channels.tsv row %r matches no channel exactly and is ambiguous when "
+                "case is ignored (channels %s, rows %s); leaving it unapplied: %s",
+                name,
+                candidates,
+                rivals,
+                origin,
+            )
+    return matches, case_matches
+
+
 def apply_channels_tsv(rec: Recording, channels_tsv: str | os.PathLike | pd.DataFrame) -> int:
     """Override per-channel ``type``/``units`` in ``rec`` from a ``_channels.tsv``.
 
-    Rows are matched to channels by the ``name`` column; ``n/a`` and empty
+    Rows are matched to channels by the ``name`` column, exactly first; a row
+    that matches no channel exactly falls back to ignoring case only when that
+    is unambiguous (see :func:`_match_sidecar_names`). ``n/a`` and empty
     values are skipped (the importer-inferred value is kept). An unrecognized
     ``type`` is warned about and skipped rather than raising.
 
@@ -396,7 +468,9 @@ def apply_channels_tsv(rec: Recording, channels_tsv: str | os.PathLike | pd.Data
     ``rec.metadata["channels_tsv_units"]`` as
     ``{"converted", "relabelled", "kept_importer_unit", "units_column_present"}``,
     so a caller can tell "the sidecar declared no units" from "the units were
-    already correct" without re-scanning every channel.
+    already correct" without re-scanning every channel. When a row was matched
+    only by ignoring case, the report also carries ``matched_case_insensitive``,
+    ``{sidecar_name: channel_label}``; the key is absent otherwise.
 
     Args:
         rec: The Recording object to update in place.
@@ -420,12 +494,22 @@ def apply_channels_tsv(rec: Recording, channels_tsv: str | os.PathLike | pd.Data
     if not units_present:
         logging.warning("channels.tsv has no 'units' column: %s", origin)
 
-    report = {_CONVERTED: 0, _RELABELLED: 0, _KEPT: 0, "units_column_present": units_present}
+    report: dict = {
+        _CONVERTED: 0,
+        _RELABELLED: 0,
+        _KEPT: 0,
+        "units_column_present": units_present,
+    }
+    targets, case_matches = _match_sidecar_names(
+        [str(name).strip() for name in df["name"]], list(rec.channels), origin
+    )
+    if case_matches:
+        report[_CASE_MATCHED] = case_matches
     changed: set[str] = set()
     matched: set[str] = set()
     for _, row in df.iterrows():
-        name = str(row["name"]).strip()
-        if name not in rec.channels:
+        name = targets.get(str(row["name"]).strip())
+        if name is None:
             continue
         matched.add(name)
         ctype = str(row.get("type", "")).strip()
@@ -489,8 +573,9 @@ def apply_channels_tsv_to_stream(
     unit was recorded rather than adopted. Entries the sidecar does not name are
     left exactly as the importer built them.
 
-    Rows are matched by the ``name`` column, and several rows naming one channel
-    compose in file order, the same as :func:`apply_channels_tsv`. Should a
+    Rows are matched by the ``name`` column, with the same exact-then-unambiguous
+    case-insensitive rule as :func:`apply_channels_tsv`, and several rows naming
+    one channel compose in file order, the same as there. Should a
     source ever list the same label twice, every entry with that label gets the
     same treatment, so duplicate labels cannot end up in different units inside
     one store (the EDF source suffixes repeats MNE-style, so it lists none).
@@ -519,10 +604,26 @@ def apply_channels_tsv_to_stream(
     if not units_present:
         logging.warning("channels.tsv has no 'units' column: %s", origin)
 
-    report = {_CONVERTED: 0, _RELABELLED: 0, _KEPT: 0, "units_column_present": units_present}
+    report: dict = {
+        _CONVERTED: 0,
+        _RELABELLED: 0,
+        _KEPT: 0,
+        "units_column_present": units_present,
+    }
+    targets, case_matches = _match_sidecar_names(
+        [str(name).strip() for name in df["name"]],
+        [str(entry["label"]) for entry in channels],
+        origin,
+    )
+    if case_matches:
+        report[_CASE_MATCHED] = case_matches
+    # Keyed by the channel label each row describes, which is the row's own name
+    # unless it matched only by ignoring case.
     rows_by_name: dict[str, list[pd.Series]] = {}
     for _, row in df.iterrows():
-        rows_by_name.setdefault(str(row["name"]).strip(), []).append(row)
+        target = targets.get(str(row["name"]).strip())
+        if target is not None:
+            rows_by_name.setdefault(target, []).append(row)
 
     uncovered: list[str] = []
     for entry in channels:
