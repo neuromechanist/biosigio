@@ -59,6 +59,8 @@ which keep the full notes; releases older than 1.1.0 are listed there only.
 - EEGLAB: a v7.3 `.set` whose top-level `chanlocs` or `event` is empty (`[]`)
   loads with default `ChannelN` labels or no events,
   instead of failing because MATLAB stores that empty value as an array rather than a struct group.
+  A non-empty numeric or character array in their place raises `FileReadError` naming the field,
+  rather than being read as none.
 - EEGLAB: a v7.3 file that is valid HDF5 but holds neither EEGLAB layout
   raises `FileReadError` saying it is not an EEGLAB v7.3 dataset,
   instead of `CorruptFileError`.

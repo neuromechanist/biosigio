@@ -89,7 +89,9 @@ extension -- both forms are `.set`.
    same as a null reference, rather than as characters or a number. That
    includes an empty top-level `EEG.chanlocs = []` or `EEG.event = []`, which
    MATLAB stores as such an array rather than a struct group: it reads as no
-   channel descriptions (default `ChannelN` labels) or no events. An event
+   channel descriptions (default `ChannelN` labels) or no events. A non-empty
+   numeric or character array in their place raises `FileReadError` naming
+   the field, rather than being read as none. An event
    whose type or latency is empty is dropped, and a channel whose label is
    empty gets the default label; either is logged as a warning with a count
 4. Raising the same `NotContinuousRecordingError` the rest of biosigIO uses

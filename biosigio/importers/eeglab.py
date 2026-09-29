@@ -511,9 +511,22 @@ class EEGLABImporter(BaseImporter):
         not a group at all: MATLAB stores it as a ``uint64`` dims dataset
         flagged ``MATLAB_empty``, the same marker :meth:`_deref_h5_value`
         treats as "no value". That yields no elements, not an error.
+
+        Raises:
+            FileReadError: The field is a non-empty dataset rather than a struct
+                group (a numeric or char array where EEGLAB writes a struct), so
+                reading it as "none" would silently drop its channels or events.
         """
-        if not isinstance(group, h5py_mod.Group) or group.attrs.get("MATLAB_empty"):
+        if group.attrs.get("MATLAB_empty"):
             return []
+        if not isinstance(group, h5py_mod.Group):
+            if group.size == 0:
+                return []
+            raise FileReadError(
+                f"EEGLAB v7.3 field {group.name} in {h5file.filename} is a "
+                f"{group.dtype} array of shape {group.shape}, not a struct array; "
+                "its entries cannot be read as channel locations or events"
+            )
         field_values: dict[str, list[Any]] = {}
         n = 0
         for field in group.keys():
