@@ -86,7 +86,12 @@ extension -- both forms are `.set`.
    through `#refs#`, and char arrays are decoded from their Unicode
    code-point representation. An empty MATLAB value (`[]`, stored as a small
    `uint64` dimensions array flagged `MATLAB_empty`) is read as no value, the
-   same as a null reference, rather than as characters or a number
+   same as a null reference, rather than as characters or a number. That
+   includes an empty top-level `EEG.chanlocs = []` or `EEG.event = []`, which
+   MATLAB stores as such an array rather than a struct group: it reads as no
+   channel descriptions (default `ChannelN` labels) or no events. An event
+   whose type or latency is empty is dropped, and a channel whose label is
+   empty gets the default label; either is logged as a warning with a count
 4. Raising the same `NotContinuousRecordingError` the rest of biosigIO uses
    when `EEG.trials > 1` (an epoched file), instead of silently flattening
    epochs into a fake continuous stream
@@ -128,7 +133,9 @@ EEGLAB doesn't always explicitly designate channel types. biosigIO's EEGLAB impo
 - Signal data stored inline in the `.set` or in a separate float32 `.fdt` file is supported for both save forms; the sibling `.fdt` is resolved by the `.set` path (so BIDS-renamed files load even though `EEG.data` keeps the original `.fdt` name)
 - Event markers are loaded into the `events` table (`rec.events`): EEGLAB event latency/duration (samples) are converted to onset/duration in seconds and the event `type` becomes the description
 - Channel locations (if available) are preserved in the channel information
-- Channel labels are made unique: a repeated `chanlocs` label (or a padded default label that collides with a real one) is renamed with a numeric suffix (`Fz`, `Fz_2`, `Fz_3`, ...) and a warning names it
+- Channel labels are made unique: a repeated `chanlocs` label (or a padded default label that collides with a real one) is renamed with a numeric suffix (`Fz`, `Fz_2`, `Fz_3`, ...) and a warning names it. This `_2`, `_3` scheme is EEGLAB's own; EDF/BDF, WFDB and Zarr re-import use MNE-style `-0`, `-1` suffixes instead (see [EDF repeated channel labels](edf.md#repeated-channel-labels))
+- When the `.fdt` read is not the one `EEG.data` names (the BIDS-renamed sibling), the substitution is logged at info level and recorded in the metadata as `eeglab_fdt_recovered`, for example `{"referenced": "Merged.fdt", "used": "sub-01_eeg.fdt"}`
+- A header with no usable sampling rate (`srate` absent, empty or zero) is read at 1000 Hz, and a warning says so
 - An epoched MATLAB v7.3 file (`EEG.trials > 1`) raises `NotContinuousRecordingError` rather than being read as a fake continuous recording. The classic path's separate, pre-existing behavior for an epoched `.fdt` is unchanged here: it concatenates trials into one continuous series instead (see `test_eeglab_reads_epoched_fdt`). The two paths therefore disagree on what an epoched file should become; that inconsistency predates this change and is tracked separately rather than resolved here.
 - Some EEGLAB-specific information may not be fully preserved in the conversion
 - Time information is properly handled to maintain accurate timing in the imported data 

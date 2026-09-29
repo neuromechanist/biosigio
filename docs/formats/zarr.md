@@ -187,6 +187,8 @@ The root group attributes carry the format tag and version so a reader can recog
 - `format` is `"biosigio-zarr"`.
 - `format_version` is currently `2`. In version 2, `recording_metadata` is a native JSON object, with non-JSON-native values such as datetimes carried in typed envelopes, so a browser or zarrita reader can consume it without a second parse. Version 1 stored `recording_metadata` as a JSON string; the reader still accepts version 1 stores.
 
+`recording_metadata` also carries what the importer had to change or recover to read the source, when it did: `channel_labels_deduplicated` (repeated channel labels that were suffixed, as `{new_label: original_label}`), `brainvision_header_recovered` (a stale BrainVision header read through same-stem siblings) and `eeglab_fdt_recovered` (an EEGLAB `.fdt` read under a name other than the one the `.set` gives). Each key is present only when it applies, so a store without them reads exactly as before. Re-importing a store published before repeated labels were suffixed suffixes them on read and records the renames under the same key.
+
 A reader should reject a store whose `format_version` is newer than the one it supports rather than guess at an unknown layout. The biosigIO importer does exactly this: it raises if the store's version exceeds the version this build reads.
 
 ### Extended attributes

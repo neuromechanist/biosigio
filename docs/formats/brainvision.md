@@ -26,7 +26,13 @@ You always pass the **header (`.vhdr`) file** to biosigIO. MNE-Python resolves t
 
 Renaming a BrainVision triplet (as BIDS conversion does) changes the file names on disk but not the `DataFile=`/`MarkerFile=` entries inside the header, so the header can name a `.eeg` or `.vmrk` that no longer exists. When a referenced file is missing and a sibling with the header's own stem exists (`<stem>.eeg`, then `<stem>.dat`, for the data; `<stem>.vmrk` for the markers), biosigIO reads a patched temporary copy of the header that points at the sibling. Because the copy lives in a temporary directory, every non-empty `DataFile=` and `MarkerFile=` entry in its `[Common Infos]` section is rewritten to an absolute path, not only the stale one; the rest of the header, its encoding and its line endings are kept. If the header's codepage cannot spell such a path (for example, a Greek or CJK directory name under a cp1252 header), the copy is written as UTF-8 and its `Codepage=` entry is changed to `UTF-8` to match. The dataset's own files are never modified. The streaming Zarr export (`stream_to_zarr`) uses the same resolution.
 
-A header whose references all exist is passed to MNE unchanged, and so is one where neither the named file nor a same-stem sibling exists, so that MNE reports the missing file as before.
+A sibling is matched by exact name first, then case-insensitively (`<stem>.EEG` or `<stem>.VMRK` on a case-sensitive filesystem), but only when exactly one file matches; two files that differ only in case are never guessed between. MNE picks its marker reader by the exact `.vmrk` suffix, so a marker sibling found this way is read through a byte copy with a lower-case name in the same temporary directory.
+
+A successful recovery is logged at info level and recorded in the recording's metadata under `brainvision_header_recovered`, for example `{"DataFile": {"referenced": "old.eeg", "used": "sub-01_eeg.eeg"}}`; the streaming export writes the same entry into the store's `recording_metadata`.
+
+A header whose references all exist is passed to MNE unchanged, and so is one where neither the named file nor a same-stem sibling exists, so that MNE reports the missing file. In rare cases the siblings exist but no header encoding can spell their path (a directory name holding bytes that are not valid UTF-8); the read then raises `BrainVisionHeaderRecoveryError`, which says so. It is deliberately not a `BiosigIOError`: the recording is readable, and what failed is spelling this host's path to it.
+
+Read errors are typed the same way on both paths: the importer and the streaming export classify an MNE failure with `classify_read_error`, so a corrupt header raises a `FileReadError` (or a subclass) from either path, and a message that quoted the temporary header copy names the real `.vhdr` instead.
 
 ## Loading Data
 
@@ -91,6 +97,7 @@ Loaded BrainVision recordings include metadata such as:
 
 - `source_file`: Path to the `.vhdr` header file passed to `from_file`.
 - `number_of_signals`: The number of channels read from the recording.
+- `brainvision_header_recovered`: Present only when the header named missing files and same-stem siblings were read instead (see [Renamed files and stale header references](#renamed-files-and-stale-header-references)).
 
 ```python
 rec = Recording.from_file('subject01.vhdr')
