@@ -147,3 +147,35 @@ def test_wfdb_importer_handles_record_name_input(wfdb_importer, wfdb_data):
     assert isinstance(rec, Recording)
     assert rec.get_metadata("record_name") == WFDB_RECORD_NAME
     assert not rec.events.empty  # Check annotations loaded correctly too
+
+
+def test_wfdb_repeated_sig_name_keeps_every_signal(tmp_path):
+    """A header repeating a sig_name loads every signal under a suffixed label.
+
+    wfdb's writer refuses repeated names, so the record is written with unique
+    names and its header then edited on disk; wfdb's reader accepts the result.
+    Before the fix the second signal silently replaced the first.
+    """
+    import numpy as np
+    import wfdb
+
+    sig = np.random.default_rng(0).normal(size=(500, 3))
+    wfdb.wrsamp(
+        "dup",
+        fs=250,
+        units=["mV"] * 3,
+        sig_name=["EMG1", "EMG2", "ECG"],
+        p_signal=sig,
+        fmt=["16"] * 3,
+        write_dir=str(tmp_path),
+    )
+    hea = tmp_path / "dup.hea"
+    hea.write_text(hea.read_text().replace("EMG2", "EMG1"))
+    assert wfdb.rdrecord(str(tmp_path / "dup")).sig_name == ["EMG1", "EMG1", "ECG"]
+
+    rec = WFDBImporter().load(str(hea))
+
+    assert list(rec.channels) == ["EMG1-0", "EMG1-1", "ECG"]
+    for i, label in enumerate(["EMG1-0", "EMG1-1", "ECG"]):
+        np.testing.assert_allclose(rec.signals[label].to_numpy(), sig[:, i], atol=1e-3)
+        assert "adc_gain" in rec.channels[label]
