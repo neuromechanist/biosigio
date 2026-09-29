@@ -15,6 +15,7 @@ import pytest
 
 from biosigio.importers._labels import DEDUPLICATED_LABELS_KEY, suffix_repeated_labels
 from biosigio.importers.csv import CSVImporter
+from biosigio.importers.trigno import TrignoImporter
 from biosigio.importers.xdf import XDFImporter
 
 
@@ -198,3 +199,31 @@ def test_csv_repeated_header_keeps_every_column(tmp_path):
     rec = CSVImporter().load(path, force_generic=True, sample_frequency=100)
     assert len(rec.channels) == 3
     assert [rec.signals[c].iloc[0] for c in rec.signals.columns] == [3, 13, 23]
+
+
+# --- Delsys Trigno --------------------------------------------------------------
+
+
+def _write_trigno(path, labels: list[str]) -> str:
+    """A Trigno export in the layout of ``examples/truncated_trigno_sample.csv``."""
+    meta = [
+        f"Label: {label} Sampling frequency: 1.000000e+002 Number of points: 3 "
+        "start: 0.000000e+000 Unit: V Domain Unit: s"
+        for label in labels
+    ]
+    header = ",".join(f'X[s],"{label}"' for label in labels)
+    rows = [",".join(f"{t / 100},{t + 10 * i}" for i in range(len(labels))) for t in range(3)]
+    path.write_text("\n".join([*meta, "", header, *rows]) + "\n")
+    return str(path)
+
+
+def test_trigno_distinct_labels_import(tmp_path):
+    path = _write_trigno(tmp_path / "ok.csv", ["Sensor 1: EMG 1", "Sensor 2: EMG 2"])
+    rec = TrignoImporter().load(path)
+    assert list(rec.channels) == ["Sensor 1: EMG 1", "Sensor 2: EMG 2"]
+
+
+def test_trigno_repeated_label_is_refused_not_dropped(tmp_path):
+    path = _write_trigno(tmp_path / "dup.csv", ["Sensor 1: EMG 1", "Sensor 1: EMG 1"])
+    with pytest.raises(ValueError, match="repeats the channel label 'Sensor 1: EMG 1'"):
+        TrignoImporter().load(path)
