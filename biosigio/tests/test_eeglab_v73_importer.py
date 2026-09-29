@@ -90,6 +90,8 @@ def _write_v73_set(
     session=None,
     comments=None,
     flat=False,
+    empty_chanlocs=False,
+    empty_event=False,
 ):
     """Write a MATLAB-v7.3-shaped ``.set``: a MAT text header + an HDF5 body.
 
@@ -128,6 +130,9 @@ def _write_v73_set(
             datasets, same as the ``data_filename`` char array.
         flat: If True, writes the struct's fields directly at the HDF5 root
             with no ``EEG`` group, the flat layout EEGLAB can also save.
+        empty_chanlocs, empty_event: If True, write ``EEG.chanlocs = []`` /
+            ``EEG.event = []`` the way MATLAB does: not a struct group but a
+            ``uint64`` dims dataset flagged ``MATLAB_empty``.
     """
     inner_path = path + ".inner"
     with h5py.File(inner_path, "w") as f:
@@ -218,6 +223,12 @@ def _write_v73_set(
                     "X",
                     data=np.array([new_ref(number=v) for v in x], dtype=h5py.ref_dtype),
                 )
+
+        for field_name, empty in (("chanlocs", empty_chanlocs), ("event", empty_event)):
+            if empty:
+                ds = eeg.create_dataset(field_name, data=np.array([0, 0], dtype=np.uint64))
+                ds.attrs["MATLAB_class"] = np.bytes_(b"struct")
+                ds.attrs["MATLAB_empty"] = np.uint8(1)
 
         if events is not None:
             event_grp = eeg.create_group("event")
@@ -424,6 +435,42 @@ def test_v73_matlab_empty_chanloc_field_is_no_value(tmp_path, flat):
     rec = EEGLABImporter().load(path)
     assert list(rec.channels) == labels
     assert rec.signals.shape == (10, 3)
+
+
+@pytest.mark.parametrize("flat", [False, True])
+@pytest.mark.parametrize(
+    ("empty_chanlocs", "empty_event"), [(True, False), (False, True), (True, True)]
+)
+def test_v73_empty_top_level_chanlocs_or_event_loads(tmp_path, flat, empty_chanlocs, empty_event):
+    """``EEG.chanlocs = []`` / ``EEG.event = []`` is a MATLAB_empty dataset, not a
+    struct group; it reads as no channels described / no events, never a crash."""
+    path = str(tmp_path / "empty_top.set")
+    data = np.arange(20, dtype=np.float32).reshape(2, 10)
+    _write_v73_set(
+        path,
+        nbchan=2,
+        pnts=10,
+        srate=100.0,
+        data=data,
+        labels=None if empty_chanlocs else ["Fz", "Cz"],
+        events=None if empty_event else [{"latency": 3, "type": "stim"}],
+        flat=flat,
+        empty_chanlocs=empty_chanlocs,
+        empty_event=empty_event,
+    )
+    with h5py.File(path, "r") as f:
+        root = f if flat else f["EEG"]
+        for field_name, empty in (("chanlocs", empty_chanlocs), ("event", empty_event)):
+            if empty:  # the fixture really has MATLAB's on-disk shape
+                assert isinstance(root[field_name], h5py.Dataset)
+                assert root[field_name].attrs["MATLAB_empty"] == 1
+
+    rec = EEGLABImporter().load(path)
+
+    expected_labels = ["Channel1", "Channel2"] if empty_chanlocs else ["Fz", "Cz"]
+    assert list(rec.channels) == expected_labels
+    np.testing.assert_array_equal(rec.signals[expected_labels[1]].to_numpy(), data[1])
+    assert list(rec.events["description"]) == ([] if empty_event else ["stim"])
 
 
 def test_v73_flat_root_without_pnts_is_not_accepted(tmp_path):
