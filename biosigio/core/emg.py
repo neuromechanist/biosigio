@@ -336,6 +336,11 @@ class Recording:
         Returns:
             Recording: A new Recording object containing only the selected channels
 
+        Raises:
+            ValueError: If no selection is given, a named channel does not exist,
+                a name is listed more than once, or no channel matches the type
+                or modality filter.
+
         Examples:
             # Select specific channels
             new_rec = rec.select_channels(['EMG1', 'ACC1'])
@@ -366,6 +371,13 @@ class Recording:
 
         if channels is None:
             raise ValueError("Specify at least one of: channels, channel_type, or modality.")
+
+        # A name listed twice would copy its column twice into the new signal
+        # frame while the channel dict keeps one entry, leaving a Recording whose
+        # signals and channels disagree.
+        repeated = [ch for ch in dict.fromkeys(channels) if channels.count(ch) > 1]
+        if repeated:
+            raise ValueError(f"Channels listed more than once: {repeated}")
 
         # Validate channels exist
         if not all(ch in self.signals.columns for ch in channels):
