@@ -84,7 +84,7 @@ mef3 = [
     "pymef>=1.4.8",
 ]
 # Parquet + Arrow/Feather serialization (analytics, fast IPC). Install with
-# `uv sync --extra arrow`. Zarr will get its own extra in a later phase.
+# `uv sync --extra arrow`. Zarr has its own extra, below.
 arrow = [
     "pyarrow>=14",
 ]
