@@ -166,6 +166,15 @@ def table_to_recording(table: pa.Table) -> Recording:
             f"(this build reads version {FORMAT_VERSION})."
         )
 
+    # biosigIO writes one column per channel label, but an Arrow table can hold
+    # two fields with the same name (Parquet refuses to read one back), and the
+    # channel dict below can describe only one of them.
+    repeated = [
+        name for name in dict.fromkeys(table.column_names) if table.column_names.count(name) > 1
+    ]
+    if repeated:
+        raise ValueError(f"biosigIO tabular file repeats signal column(s) {repeated}")
+
     rec = Recording()
     rec.signals = table.to_pandas()  # restores the preserved (time) index
     rec.metadata = meta.get("metadata", {})

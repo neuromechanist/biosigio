@@ -13,6 +13,7 @@ import struct
 import numpy as np
 import pytest
 
+from biosigio import Recording
 from biosigio.importers._labels import DEDUPLICATED_LABELS_KEY, suffix_repeated_labels
 from biosigio.importers.csv import CSVImporter
 from biosigio.importers.trigno import TrignoImporter
@@ -227,3 +228,22 @@ def test_trigno_repeated_label_is_refused_not_dropped(tmp_path):
     path = _write_trigno(tmp_path / "dup.csv", ["Sensor 1: EMG 1", "Sensor 1: EMG 1"])
     with pytest.raises(ValueError, match="repeats the channel label 'Sensor 1: EMG 1'"):
         TrignoImporter().load(path)
+
+
+# --- Arrow / Feather ------------------------------------------------------------
+
+
+def test_feather_with_a_repeated_column_is_refused(tmp_path):
+    """An edited Feather file naming two columns alike cannot become a Recording."""
+    feather = pytest.importorskip("pyarrow.feather")
+    pa = pytest.importorskip("pyarrow")
+    rec = XDFImporter().load(_write_xdf(tmp_path / "t.xdf", [("A", ["C3", "C4"], _block(0.0, 2))]))
+    written = rec.to_arrow(str(tmp_path / "t.feather"))
+    table = feather.read_table(written)
+    names = ["C3" if name == "C4" else name for name in table.column_names]
+    edited = pa.Table.from_arrays(table.columns, names=names, metadata=table.schema.metadata)
+    feather.write_feather(edited, str(tmp_path / "edited.feather"))
+
+    with pytest.raises(ValueError, match=r"repeats signal column\(s\) \['C3'\]"):
+        Recording.from_file(str(tmp_path / "edited.feather"))
+    assert list(Recording.from_file(written).signals.columns) == ["C3", "C4"]
