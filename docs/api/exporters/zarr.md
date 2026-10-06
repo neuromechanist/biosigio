@@ -18,8 +18,14 @@ serving model.
 
 ## Subject information
 
-`exclude_subject_info=True` leaves subject information out of the store; see
-[Subject information](../../formats/zarr.md#subject-information).
+`exclude_subject_info=True` removes the members named in `SUBJECT_INFO_KEYS` from
+the store's `recording_metadata` (matched by normalized name at any depth, outside
+biosigIO's label-keyed maps), reduces `source_file` and `bti_pdf_file` to their final
+path component, and sets the root attribute `subject_info_excluded: true`, which
+records that the option ran rather than that the store was verified clean. It keeps
+recording dates and times, events, channel labels, units and prefilter text. See
+[Subject information](../../formats/zarr.md#subject-information) for the full list and
+the limits of matching by name.
 
 ::: biosigio.exporters.subject_info
     options:

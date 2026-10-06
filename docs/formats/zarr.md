@@ -157,14 +157,16 @@ Both are additive, so `format_version` stays at 2.
 ## Subject information
 
 A store holds the signal, the events, channel names, types and units, and technical recording metadata;
-information about the subject belongs at dataset scope, in a BIDS `participants.tsv`, not in every recording's store.
-Some source headers carry it anyway, and the importers copy it into the recording metadata:
-the EDF/BDF patient code, sex, birth date, name and additional patient text,
-operator and administrative free text (technician, administrative code, equipment, additional recording text),
-EEGLAB's `subject` and `group`,
-and free-text `comments` (EEGLAB's, and WFDB header comments, which in PhysioNet records carry age, sex, diagnoses and medication).
+the subject's identity and phenotype (age, sex and the like) belong at dataset scope, in a BIDS `participants.tsv`.
+Some source headers carry such information anyway, and the importers copy it into the recording metadata:
+the EDF/BDF importer copies the patient code, `gender` (the header's sex), `birthdate` and additional patient text,
+and the operator and administrative fields (technician, administrative code, equipment, additional recording text);
+the EEGLAB importer copies `subject`, `group`, the set name and the file name and path the set was saved under;
+the WFDB importer copies the record name and the header `comments`, which in PhysioNet records carry age, sex, diagnoses and medication.
+The EDF importer never copies the patient name;
+a name reaches a store only through a caller's `recording_metadata`, such as a pyedflib header passed to `stream_to_zarr`.
 
-Pass `exclude_subject_info=True` to leave those members out of a store's `recording_metadata`.
+Pass `exclude_subject_info=True` to leave that information out of a store.
 Both writers take it, `Recording.to_zarr` (and `ZarrExporter.export`) and `stream_to_zarr`,
 and on the streaming path it also applies to the caller's `recording_metadata` dict:
 
@@ -175,15 +177,41 @@ stream_to_zarr('recording.edf', 'recording.zarr',
                recording_metadata=meta, exclude_subject_info=True)
 ```
 
-The members removed are the names in `biosigio.SUBJECT_INFO_KEYS`, matched case-insensitively at any depth of the metadata
-(through nested objects, such as an older store's `recording_info`, and through lists),
-and each is removed whatever its value, an empty one included.
-Every other member is kept, in its original order.
+**What the option removes.** Every member of `recording_metadata` whose name is in `biosigio.SUBJECT_INFO_KEYS`:
+`patientcode`, `gender`, `sex`, `birthdate`, `birthday`, `dob`, `age`, `hand`, `handedness`, `weight`, `height`,
+`patient`, `patient_name`, `patientname`, `patient_id`, `patient_additional`, `participant_id`, `subject`, `subject_id`, `subject_info`, `his_id`,
+`first_name`, `middle_name`, `last_name`, `name`, `group`,
+`technician`, `operator`, `experimenter`, `admincode`, `equipment`, `recording_additional`, `description`, `comments`,
+`local_patient_identification`, `local_recording_identification`,
+`setname`, `filename`, `filepath`, `record_name`,
+and the read-recovery records `eeglab_fdt_recovered` and `brainvision_header_recovered`, whose contents are file names.
+A name matches after normalization: casefolded, with every character that is not a letter or a digit dropped,
+so `Sex:`, `birth_date` and `Patient Name` match, while `subjects` and `comments_total` do not (never a substring or a prefix).
+Matching is by name at any depth (through nested objects, such as an older store's `recording_info`, and through lists),
+except inside biosigIO's own label-keyed maps, `channels_tsv_units` and `channel_labels_deduplicated`,
+whose keys are channel labels, so a channel labeled `Sex` keeps its entry there.
+A matching member is removed whole, whatever its value, an empty one included.
+Because matching is by name, a technical member that happens to be spelled like one of these is removed too,
+and subject information held under any other name, or inside a value, is not.
+The option also reduces `source_file` and `bti_pdf_file` to their final path component,
+so a local directory, and the user name it may contain, never reaches the store.
+
+**What the option keeps.** Everything else, in its original order:
+the recording start date and time (`startdate`, `starttime`, `meas_date`, `recording_date`; an acquisition date not linked to a subject is retained),
+the events and their label map, every channel's label, type, unit and prefilter text,
+and the file name in `source_file`, which can carry a BIDS label such as `sub-01`.
+Bare `name` and `description` are removed because no importer writes a technical member under either.
+
 The recording or dict passed in is not changed.
-A store written this way carries the root attribute `subject_info_excluded: true`,
-so a reader or a sweep can tell that the absence is deliberate;
-it records nothing about what was removed.
-`biosigio.strip_subject_info(metadata)` applies the same removal to any metadata mapping and returns a new dict.
+`biosigio.strip_subject_info(metadata)` applies the same removal to any metadata mapping and returns a new dict,
+and `biosigio.is_subject_info_key(name)` answers whether one name matches.
+
+A store written this way carries the root attribute `subject_info_excluded: true`.
+It records that the option ran on that export, not that the store has been verified clean,
+and nothing about what was removed;
+the store's `biosigio_version` identifies which release's key list was applied.
+Re-exporting such a store through `Recording.from_file(...).to_zarr(...)` without the option does not carry the attribute over.
+The attribute is additive, so `format_version` stays at 2.
 
 The default, `exclude_subject_info=False`, writes the metadata exactly as earlier releases did and adds no attribute.
 The importer reads stores with and without these members and the attribute.
@@ -261,7 +289,7 @@ The exporter defaults follow the store specification. Override any of them as ke
 | `shard_seconds` | 300 | Level-0 sequential-read grain, rounded to whole chunks |
 | `view_chunk_columns` | 1024 | Columns per `view/*` chunk, capped by the level's length |
 | `compressor_level` | 5 | zstd compression level (Blosc codec) |
-| `exclude_subject_info` | `False` | Leave subject information out of `recording_metadata` (see [Subject information](#subject-information)); `stream_to_zarr` takes it too |
+| `exclude_subject_info` | `False` | Leave subject information out of `recording_metadata` and reduce source paths to a file name (see [Subject information](#subject-information)); `stream_to_zarr` takes it too |
 
 **The pyramid stopping rule.** A level is built, and then the loop stops once the level just built is at or below `min_view_samples`. So the floor bounds the level a further one would have been built *from*, not the shortest level in the store: the final level can itself be shorter than `min_view_samples`. A 30000-sample level 0 at the defaults gives 7500, 1875, and 468; the 468 is written because 1875 was still above the floor, and no level 4 follows because 468 is not.
 
