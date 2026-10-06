@@ -10,7 +10,12 @@ Entries before 1.2.9 are condensed from the
 [GitHub Releases](https://github.com/neuromechanist/biosigio/releases),
 which keep the full notes; releases older than 1.1.0 are listed there only.
 
-## [Unreleased]
+## [1.2.11] - 2026-10-06
+
+This patch release adds one opt-in option and changes nothing by default:
+a store written without it is the store 1.2.10 writes, apart from its creation time and biosigIO version.
+It contains no breaking changes.
+It is numbered 1.2.11 rather than 1.3.0 by the maintainer's decision, as 1.2.9 and 1.2.10 were, although it adds public names.
 
 ### Added
 
@@ -44,7 +49,8 @@ which keep the full notes; releases older than 1.1.0 are listed there only.
   and a re-export without the option does not carry it.
 - `biosigio.strip_subject_info` applies the same removal to any metadata mapping without modifying it,
   and `biosigio.is_subject_info_key` tests one name.
-- The default, `exclude_subject_info=False`, writes the same store as 1.2.10.
+- The default, `exclude_subject_info=False`, writes the same store as 1.2.10
+  (every array and chunk file is byte-identical; only `created_utc` and `biosigio_version` differ).
 
 ## [1.2.10] - 2026-09-29
 
@@ -410,7 +416,7 @@ First release since 1.1.3; the internal 1.1.4 and 1.1.5 bumps are folded in.
 - EEGLAB `.set` files with the signal matrix in a sibling `.fdt` file (#94).
 - `bids.apply_events_tsv` to load a BIDS `_events.tsv` into `rec.events`.
 
-[Unreleased]: https://github.com/neuromechanist/biosigio/compare/v1.2.10...HEAD
+[1.2.11]: https://github.com/neuromechanist/biosigio/compare/v1.2.10...v1.2.11
 [1.2.10]: https://github.com/neuromechanist/biosigio/compare/v1.2.9...v1.2.10
 [1.2.9]: https://github.com/neuromechanist/biosigio/compare/v1.2.8...v1.2.9
 [1.2.8]: https://github.com/neuromechanist/biosigio/compare/v1.2.7...v1.2.8
