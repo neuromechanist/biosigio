@@ -788,7 +788,7 @@ class Recording:
 
         return TabularExporter.to_arrow(self, filepath)
 
-    def to_zarr(self, filepath: str, **kwargs) -> str:
+    def to_zarr(self, filepath: str, *, exclude_subject_info: bool = False, **kwargs) -> str:
         """Export to a sharded Zarr v3 serving store with a min/max view pyramid.
 
         Writes one cloud-native store that serves viewing, inference, and training
@@ -802,6 +802,12 @@ class Recording:
 
         Args:
             filepath: Output store path (``.zarr`` appended if missing).
+            exclude_subject_info: Leave subject information (patient code, birth
+                date, sex, name, operator and administrative free text; see
+                :data:`~biosigio.exporters.subject_info.SUBJECT_INFO_KEYS`) out of
+                the store's ``recording_metadata`` and mark the store root with
+                ``subject_info_excluded``. This recording's own metadata is not
+                changed. Default False keeps them, as earlier releases did.
             **kwargs: Forwarded to :meth:`ZarrExporter.export`.
 
         Returns:
@@ -811,7 +817,9 @@ class Recording:
 
         # The empty-signal guard lives once, in ZarrExporter.export ("No signals
         # loaded"), matching the tabular path; no duplicate guard here.
-        return ZarrExporter.export(self, filepath, **kwargs)
+        return ZarrExporter.export(
+            self, filepath, exclude_subject_info=exclude_subject_info, **kwargs
+        )
 
     def set_metadata(self, key: str, value: Any) -> None:
         """

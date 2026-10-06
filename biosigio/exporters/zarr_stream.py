@@ -65,6 +65,7 @@ from ..exceptions import is_resource_exhaustion
 from ..importers._mne_common import _FIFF_UNIT_TO_DIM, _MNE_TYPE_TO_biosigIO, require_mne
 from ..tabular_schema import metadata_to_mapping
 from ..version import __version__ as _BIOSIGIO_VERSION
+from .subject_info import SUBJECT_INFO_EXCLUDED_ATTR, strip_subject_info
 from .zarr import (
     _DISCRETE_TYPES,
     DEFAULT_MODALITY_RATES,
@@ -452,6 +453,7 @@ def stream_to_zarr(
     compressor_level: int = 5,
     read_chunk_seconds: float = 30.0,
     scratch_dir: str | None = None,
+    exclude_subject_info: bool = False,
 ) -> str:
     """Stream ``filepath`` to a Zarr serving store with bounded peak memory.
 
@@ -496,6 +498,12 @@ def stream_to_zarr(
             sample, base plus pyramid): the transpose is removed before pass 3,
             and the output once the group is written. Point this at fast local
             scratch.
+        exclude_subject_info: Leave subject information (see
+            :data:`~biosigio.exporters.subject_info.SUBJECT_INFO_KEYS`) out of the
+            store's ``recording_metadata``, whether it came from
+            ``recording_metadata`` or from the source, and set the root attribute
+            ``subject_info_excluded`` to true. The caller's dict is not changed.
+            Default False writes the metadata as earlier releases did.
 
     Returns:
         The store path written.
@@ -791,6 +799,11 @@ def stream_to_zarr(
             # Where the in-memory path finds it: apply_channels_tsv leaves this in
             # rec.metadata, which ZarrExporter copies into recording_metadata.
             meta["channels_tsv_units"] = units_report
+        # Encoded first and stripped after, so the removal also reaches members
+        # inside values the encoding turns into plain lists and dicts.
+        recording_meta = metadata_to_mapping(meta)
+        if exclude_subject_info:
+            recording_meta = strip_subject_info(recording_meta)
         root.attrs.update(
             {
                 "biosigio_version": _BIOSIGIO_VERSION,
@@ -803,7 +816,8 @@ def stream_to_zarr(
                 "view_chunk_columns": int(view_chunk_columns),
                 "anti_alias_filter": "scipy.signal.resample_poly (polyphase FIR)",
                 "channel_groups": written_groups,
-                "recording_metadata": metadata_to_mapping(meta),
+                "recording_metadata": recording_meta,
+                **({SUBJECT_INFO_EXCLUDED_ATTR: True} if exclude_subject_info else {}),
                 **({} if units_report is None else {"channels_tsv_units": units_report}),
                 "created_utc": _dt.datetime.now(_dt.UTC).isoformat(),
                 "note": (

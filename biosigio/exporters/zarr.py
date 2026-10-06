@@ -65,6 +65,7 @@ from ..core.channel_types import DISCRETE_CHANNEL_TYPES
 from ..core.emg import Recording
 from ..tabular_schema import metadata_to_mapping
 from ..version import __version__ as _BIOSIGIO_VERSION
+from .subject_info import SUBJECT_INFO_EXCLUDED_ATTR, strip_subject_info
 
 # Format tag/version for the root attrs, so a reader can recognize and
 # version-check a biosigIO Zarr store. v2 stores ``recording_metadata`` as a
@@ -258,6 +259,7 @@ class ZarrExporter:
         view_chunk_columns: int = 1024,
         compressor_level: int = 5,
         events_df=None,
+        exclude_subject_info: bool = False,
     ) -> str:
         """Write ``rec`` to a Zarr store at ``filepath``.
 
@@ -286,6 +288,12 @@ class ZarrExporter:
                 hundreds.
             compressor_level: zstd level for the Blosc codec.
             events_df: Optional events table; falls back to ``rec.events``.
+            exclude_subject_info: Leave subject information (patient code, birth
+                date, sex, name, operator and administrative free text; see
+                :data:`~biosigio.exporters.subject_info.SUBJECT_INFO_KEYS`) out of
+                the store's ``recording_metadata``, and set the root attribute
+                ``subject_info_excluded`` to true. ``rec`` itself is not changed.
+                Default False writes the metadata as earlier releases did.
 
         Returns:
             The store path written.
@@ -490,6 +498,12 @@ class ZarrExporter:
         # the root rather than buried in recording_metadata -- and written by the
         # streaming exporter too, which has no Recording to carry it.
         units_report = rec.metadata.get("channels_tsv_units")
+        # Encoded first and stripped after, so the removal also reaches members
+        # inside values the encoding turns into plain lists and dicts; the
+        # encoding is a new object, so rec.metadata is never touched.
+        recording_metadata = metadata_to_mapping(rec.metadata)
+        if exclude_subject_info:
+            recording_metadata = strip_subject_info(recording_metadata)
         root.attrs.update(
             {
                 "biosigio_version": _BIOSIGIO_VERSION,
@@ -505,7 +519,8 @@ class ZarrExporter:
                 # Native JSON object (datetimes/numpy as typed envelopes), shared
                 # with the tabular schema, so a browser/zarrita reader can consume
                 # it directly without a second parse and without a lossy str() dump.
-                "recording_metadata": metadata_to_mapping(rec.metadata),
+                "recording_metadata": recording_metadata,
+                **({SUBJECT_INFO_EXCLUDED_ATTR: True} if exclude_subject_info else {}),
                 **({} if units_report is None else {"channels_tsv_units": units_report}),
                 "created_utc": _dt.datetime.now(_dt.UTC).isoformat(),
                 "note": (
