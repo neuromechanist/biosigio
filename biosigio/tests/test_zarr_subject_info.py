@@ -35,7 +35,12 @@ import pytest
 from biosigio import SUBJECT_INFO_EXCLUDED_ATTR, Recording, is_subject_info_key
 from biosigio.tabular_schema import metadata_to_mapping
 
-from .subject_info_helpers import member_names, subject_members, unclassified
+from .subject_info_helpers import (
+    member_names,
+    subject_member_paths,
+    subject_members,
+    unclassified,
+)
 
 zarr = pytest.importorskip("zarr", reason="the Zarr serving format requires the 'zarr' extra")
 
@@ -430,43 +435,78 @@ def _load_quietly(path: str, **kwargs) -> Recording:
         return Recording.from_file(path, **kwargs)
 
 
-# (fixture, relative path or None for the pyedflib-written file, extra kwargs,
-# needs MNE)
+EEGLAB_MEMBERS = {"subject", "group", "comments", "setname", "filename", "filepath"}
+
+# (fixture, relative path, or None for a file this module writes; extra kwargs;
+# needs MNE; the subject-information members the importer emits, as dotted paths
+# at any depth outside the label-keyed maps). The last column is the table the
+# nested check compares against, so a list entry that matches a technical member
+# anywhere in an importer's metadata fails here.
 CLASSIFIED_FIXTURES = [
-    ("pyedflib EDF+", None, {}, False),
-    ("pyedflib BDF+", None, {}, False),
-    ("WFDB record 100", "100.hea", {}, False),
-    ("EEGLAB set", "wristbandEMG_truncated.set", {}, False),
-    ("EEGLAB BIDS set", "bids/eeg/sub-01/eeg/sub-01_task-eyesopen_eeg.set", {}, False),
+    ("pyedflib EDF+", None, {}, False, EDF_IMPORTER_SUBJECT_KEYS),
+    ("pyedflib BDF+", None, {}, False, EDF_IMPORTER_SUBJECT_KEYS),
+    ("neo", None, {}, False, set()),
+    ("WFDB record 100", "100.hea", {}, False, {"comments", "record_name"}),
+    ("EEGLAB set", "wristbandEMG_truncated.set", {}, False, EEGLAB_MEMBERS),
+    (
+        "EEGLAB BIDS set",
+        "bids/eeg/sub-01/eeg/sub-01_task-eyesopen_eeg.set",
+        {},
+        False,
+        EEGLAB_MEMBERS,
+    ),
     (
         "EDF BIDS EMG",
         "bids/emg/sub-01/emg/sub-01_task-isometric10percentmvc_run-01_emg.edf",
         {},
         False,
+        set(),
     ),
-    ("XDF", "test.xdf", {}, False),
-    ("OTB", "one_sessantaquattro_truncated.otb+", {}, False),
-    ("Trigno", "truncated_trigno_sample.csv", {"importer": "trigno"}, False),
-    ("FIF", "bids/meg/sub-01/meg/sub-01_task-mouse_meg.fif", {}, True),
-    ("CTF", "ctf/catch-alp-good-f.ds", {}, True),
-    ("BTi", "bti/sub-01_task-test_meg", {}, True),
-    ("KIT", "kit/sub-01_task-test_meg.sqd", {}, True),
-    ("BrainVision", "brainvision/sub-01_task-rest_eeg.vhdr", {}, True),
+    ("XDF", "test.xdf", {}, False, set()),
+    ("XDF multi-stream", "multi_stream_test.xdf", {}, False, set()),
+    ("OTB Sessantaquattro", "one_sessantaquattro_truncated.otb+", {}, False, set()),
+    ("OTB two Mouvi", "two_mouvi_truncated.otb+", {}, False, set()),
+    ("Trigno", "truncated_trigno_sample.csv", {"importer": "trigno"}, False, set()),
+    ("FIF", "bids/meg/sub-01/meg/sub-01_task-mouse_meg.fif", {}, True, set()),
+    ("CTF", "ctf/catch-alp-good-f.ds", {}, True, set()),
+    ("BTi", "bti/sub-01_task-test_meg", {}, True, set()),
+    ("KIT", "kit/sub-01_task-test_meg.sqd", {}, True, set()),
+    ("BrainVision", "brainvision/sub-01_task-rest_eeg.vhdr", {}, True, set()),
 ]
 
 
+def _write_neo_block(path: str) -> None:
+    """A real neo file (NeoMatlabIO round-trips through scipy), two channels."""
+    neo = pytest.importorskip("neo", reason="needs the optional 'neo' extra")
+    import quantities as pq
+
+    seg = neo.Segment()
+    data = np.vstack([np.sin(np.arange(2000) / 7.0), np.cos(np.arange(2000) / 9.0)]).T
+    seg.analogsignals.append(
+        neo.AnalogSignal(data, units="uV", sampling_rate=1000 * pq.Hz, name="amp")
+    )
+    block = neo.Block()
+    block.segments.append(seg)
+    neo.io.NeoMatlabIO(filename=path).write_block(block)
+
+
 @pytest.mark.parametrize(
-    ("label", "rel", "kwargs", "needs_mne"),
+    ("label", "rel", "kwargs", "needs_mne", "expected"),
     CLASSIFIED_FIXTURES,
     ids=[f[0] for f in CLASSIFIED_FIXTURES],
 )
-def test_every_importer_key_is_classified(label, rel, kwargs, needs_mne, tmp_path):
+def test_every_importer_member_is_classified(label, rel, kwargs, needs_mne, expected, tmp_path):
     """Each top-level member an importer emits is either kept as technical or
-    removed as subject information; an unclassified one fails here instead of
-    leaking into a store by default."""
+    removed as subject information, and the members the list matches, at any
+    depth, are exactly the expected ones: an unclassified member, or a list
+    entry that hits a technical member somewhere inside the metadata, fails."""
     if needs_mne:
         pytest.importorskip("mne", reason="needs the optional 'meg' extra (mne)")
-    if rel is None:
+    if label == "neo":
+        path = str(tmp_path / "rec.mat")
+        _write_neo_block(path)
+        kwargs = {"importer": "neo"}
+    elif rel is None:
         bdf = "BDF" in label
         path = str(tmp_path / ("rec.bdf" if bdf else "rec.edf"))
         write_edf_with_header(path, pyedflib.FILETYPE_BDFPLUS if bdf else pyedflib.FILETYPE_EDFPLUS)
@@ -476,8 +516,13 @@ def test_every_importer_key_is_classified(label, rel, kwargs, needs_mne, tmp_pat
             pytest.skip(f"{label} fixture missing")
     rec = _load_quietly(path, **kwargs)
     assert unclassified(rec.metadata) == set()
+    assert subject_member_paths(rec.metadata) == expected
     stored = root_attrs(rec.to_zarr(str(tmp_path / "on"), exclude_subject_info=True))
-    assert subject_members(stored["recording_metadata"]) == set()
+    assert subject_member_paths(stored["recording_metadata"]) == set()
+    # Only the matched members are gone: everything else the importer wrote,
+    # nested members included, survives.
+    kept = kept_after_exclude(metadata_to_mapping(rec.metadata))
+    assert stored["recording_metadata"] == kept
 
 
 @pytest.mark.parametrize("source", ["edf", "bti"])
@@ -488,6 +533,7 @@ def test_streaming_source_members_are_classified(source, header_file, tmp_path):
     path = header_file if source == "edf" else str(BTI_DIR)
     meta = root_attrs(stream_to_zarr(path, str(tmp_path / "st")))["recording_metadata"]
     assert unclassified(meta) == set()
+    assert subject_member_paths(meta) == set()
 
 
 def test_every_pyedflib_header_field_but_the_start_date_is_subject_info(header_file):
