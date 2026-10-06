@@ -63,9 +63,8 @@ from ..bids import apply_channels_tsv_to_stream, resolve_channels_tsv
 from ..core.modality import infer_modality_from_channel_type
 from ..exceptions import is_resource_exhaustion
 from ..importers._mne_common import _FIFF_UNIT_TO_DIM, _MNE_TYPE_TO_biosigIO, require_mne
-from ..tabular_schema import metadata_to_mapping
 from ..version import __version__ as _BIOSIGIO_VERSION
-from .subject_info import SUBJECT_INFO_EXCLUDED_ATTR, strip_subject_info
+from .subject_info import SUBJECT_INFO_EXCLUDED_ATTR
 from .zarr import (
     _DISCRETE_TYPES,
     DEFAULT_MODALITY_RATES,
@@ -74,6 +73,7 @@ from .zarr import (
     _build_minmax_pyramid,
     _chunk_shard_time,
     _quantize_int16_channel,
+    _recording_metadata_attr,
     _resample_channel,
     _target_rate,
     _view_chunk_columns,
@@ -498,12 +498,13 @@ def stream_to_zarr(
             sample, base plus pyramid): the transpose is removed before pass 3,
             and the output once the group is written. Point this at fast local
             scratch.
-        exclude_subject_info: Leave subject information (see
-            :data:`~biosigio.exporters.subject_info.SUBJECT_INFO_KEYS`) out of the
-            store's ``recording_metadata``, whether it came from
-            ``recording_metadata`` or from the source, and set the root attribute
-            ``subject_info_excluded`` to true. The caller's dict is not changed.
-            Default False writes the metadata as earlier releases did.
+        exclude_subject_info: Remove the members named in
+            :data:`~biosigio.exporters.subject_info.SUBJECT_INFO_KEYS` from the
+            store's ``recording_metadata``, whether they came from
+            ``recording_metadata`` or from the source, reduce ``source_file`` and
+            ``bti_pdf_file`` to their final path component, and set the root
+            attribute ``subject_info_excluded`` to true. The caller's dict is not
+            changed. Default False writes the metadata as earlier releases did.
 
     Returns:
         The store path written.
@@ -799,11 +800,7 @@ def stream_to_zarr(
             # Where the in-memory path finds it: apply_channels_tsv leaves this in
             # rec.metadata, which ZarrExporter copies into recording_metadata.
             meta["channels_tsv_units"] = units_report
-        # Encoded first and stripped after, so the removal also reaches members
-        # inside values the encoding turns into plain lists and dicts.
-        recording_meta = metadata_to_mapping(meta)
-        if exclude_subject_info:
-            recording_meta = strip_subject_info(recording_meta)
+        recording_meta = _recording_metadata_attr(meta, exclude_subject_info=exclude_subject_info)
         root.attrs.update(
             {
                 "biosigio_version": _BIOSIGIO_VERSION,

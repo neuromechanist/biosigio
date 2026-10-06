@@ -802,12 +802,14 @@ class Recording:
 
         Args:
             filepath: Output store path (``.zarr`` appended if missing).
-            exclude_subject_info: Leave subject information (patient code, birth
-                date, sex, name, operator and administrative free text; see
-                :data:`~biosigio.exporters.subject_info.SUBJECT_INFO_KEYS`) out of
-                the store's ``recording_metadata`` and mark the store root with
-                ``subject_info_excluded``. This recording's own metadata is not
-                changed. Default False keeps them, as earlier releases did.
+            exclude_subject_info: Remove the members named in
+                :data:`~biosigio.exporters.subject_info.SUBJECT_INFO_KEYS` (subject
+                identity and phenotype, operator and administrative free text,
+                identifying provenance) from the store's ``recording_metadata``,
+                reduce ``source_file`` and ``bti_pdf_file`` to their final path
+                component, and mark the store root with ``subject_info_excluded``.
+                This recording's own metadata is not changed. Default False keeps
+                them, as earlier releases did.
             **kwargs: Forwarded to :meth:`ZarrExporter.export`.
 
         Returns:
