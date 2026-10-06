@@ -38,12 +38,12 @@ import zarr  # noqa: E402
 
 from biosigio import (  # noqa: E402
     SUBJECT_INFO_EXCLUDED_ATTR,
-    SUBJECT_INFO_KEYS,
     Recording,
+    is_subject_info_key,
     stream_to_zarr,
 )
 from biosigio.tests.real_data import fetch_real_recording  # noqa: E402
-from biosigio.tests.test_zarr_subject_info import member_names  # noqa: E402
+from biosigio.tests.subject_info_helpers import subject_members, unclassified  # noqa: E402
 
 # Pinned to a released version so the bytes cannot change under the assertions.
 URL = "https://data.nemar.org/nm000181/v1.0.0/sub-2109/eeg/sub-2109_task-clinical_eeg.edf"
@@ -65,7 +65,8 @@ class Store:
         meta = attrs["recording_metadata"]
         self.root_names = set(attrs)
         self.meta_names = set(meta)
-        self.subject = member_names(meta) & SUBJECT_INFO_KEYS
+        self.subject = subject_members(meta)
+        self.source_file_is_bare = "/" not in str(meta.get("source_file", ""))
         self.flag = attrs.get(SUBJECT_INFO_EXCLUDED_ATTR)
         self.meta = meta  # compared, never asserted on directly
         self.rest = {name: dict(root[name].attrs) for name in root.keys()}
@@ -93,9 +94,19 @@ def header(edf) -> dict:
 def test_the_header_really_carries_subject_members(edf, header):
     """Otherwise the exclusion below would pass on an empty header."""
     populated = {k for k, v in header.items() if v not in ("", None)}
-    imported = member_names(Recording.from_file(edf).metadata) & SUBJECT_INFO_KEYS
+    imported = subject_members(Recording.from_file(edf).metadata)
     assert {"patientname", "birthdate"} <= populated
     assert "birthdate" in imported
+
+
+def test_every_member_of_the_real_file_is_classified(edf, header):
+    """Every top-level member the importer emits for this file is kept as
+    technical or removed as subject information, and every pyedflib header
+    field but the start date is subject information."""
+    leftover = unclassified(Recording.from_file(edf).metadata)
+    header_fields = {f for f in set(header) - {"startdate"} if not is_subject_info_key(f)}
+    assert leftover == set()
+    assert header_fields == set()
 
 
 def test_in_memory_export(edf, tmp_path):
@@ -115,13 +126,14 @@ def test_in_memory_export(edf, tmp_path):
 
     assert on.subject == set()
     assert on.flag is True
+    assert on.source_file_is_bare
     assert IN_MEMORY_TECHNICAL <= on.meta_names
     assert on.root_names - off.root_names == {SUBJECT_INFO_EXCLUDED_ATTR}
     rest_unchanged = on.rest == off.rest
     assert rest_unchanged, "exclude_subject_info changed channel or event attributes"
 
     reread = Recording.from_file(on_path)
-    reread_subject = member_names(reread.metadata) & SUBJECT_INFO_KEYS
+    reread_subject = subject_members(reread.metadata)
     assert reread_subject == set()
     assert len(reread.channels) == N_CHANNELS
 
@@ -147,8 +159,9 @@ def test_streaming_export(edf, header, caller, tmp_path):
 
     assert on.subject == set()
     assert on.flag is True
+    assert on.source_file_is_bare
     assert STREAMED_TECHNICAL <= on.meta_names
     rest_unchanged = on.rest == off.rest
     assert rest_unchanged, "exclude_subject_info changed channel or event attributes"
-    reread_subject = member_names(Recording.from_file(on_path).metadata) & SUBJECT_INFO_KEYS
+    reread_subject = subject_members(Recording.from_file(on_path).metadata)
     assert reread_subject == set()

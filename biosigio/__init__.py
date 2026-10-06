@@ -21,6 +21,7 @@ from .exporters.edf import EDFExporter
 from .exporters.subject_info import (
     SUBJECT_INFO_EXCLUDED_ATTR,
     SUBJECT_INFO_KEYS,
+    is_subject_info_key,
     strip_subject_info,
 )
 from .exporters.zarr_stream import stream_to_zarr
@@ -35,6 +36,7 @@ __all__ = [
     "SUBJECT_INFO_KEYS",
     "SUBJECT_INFO_EXCLUDED_ATTR",
     "strip_subject_info",
+    "is_subject_info_key",
     "BiosigIOError",
     "UnsupportedFormatError",
     "FileReadError",

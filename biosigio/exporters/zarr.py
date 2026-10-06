@@ -65,7 +65,11 @@ from ..core.channel_types import DISCRETE_CHANNEL_TYPES
 from ..core.emg import Recording
 from ..tabular_schema import metadata_to_mapping
 from ..version import __version__ as _BIOSIGIO_VERSION
-from .subject_info import SUBJECT_INFO_EXCLUDED_ATTR, strip_subject_info
+from .subject_info import (
+    SUBJECT_INFO_EXCLUDED_ATTR,
+    _reduce_path_provenance,
+    strip_subject_info,
+)
 
 # Format tag/version for the root attrs, so a reader can recognize and
 # version-check a biosigIO Zarr store. v2 stores ``recording_metadata`` as a
@@ -241,6 +245,25 @@ def _view_chunk_columns(n_time_level: int, view_chunk_columns: int) -> int:
     return max(1, min(int(n_time_level), int(view_chunk_columns)))
 
 
+def _recording_metadata_attr(metadata, *, exclude_subject_info: bool) -> dict:
+    """The ``recording_metadata`` root attribute for ``metadata``.
+
+    Shared by both writers (the in-memory one here and
+    :func:`~biosigio.exporters.zarr_stream.stream_to_zarr`) so the option cannot
+    mean different things on the two paths. Without the option this is exactly
+    the encoding earlier releases wrote. With it, subject information is
+    stripped twice: before encoding, so a value the encoder would refuse (bytes,
+    say) under a member being dropped cannot fail the export, and after, so a
+    member inside a value the encoder turns into a list or dict (an object array
+    of dicts) is still caught. Path-valued provenance is then reduced to its
+    final component. The input is never modified.
+    """
+    if not exclude_subject_info:
+        return metadata_to_mapping(metadata)
+    encoded = metadata_to_mapping(strip_subject_info(metadata))
+    return _reduce_path_provenance(strip_subject_info(encoded))
+
+
 class ZarrExporter:
     """Exporter to a sharded Zarr v3 store with a min/max view pyramid."""
 
@@ -288,12 +311,15 @@ class ZarrExporter:
                 hundreds.
             compressor_level: zstd level for the Blosc codec.
             events_df: Optional events table; falls back to ``rec.events``.
-            exclude_subject_info: Leave subject information (patient code, birth
-                date, sex, name, operator and administrative free text; see
-                :data:`~biosigio.exporters.subject_info.SUBJECT_INFO_KEYS`) out of
-                the store's ``recording_metadata``, and set the root attribute
-                ``subject_info_excluded`` to true. ``rec`` itself is not changed.
-                Default False writes the metadata as earlier releases did.
+            exclude_subject_info: Remove the members named in
+                :data:`~biosigio.exporters.subject_info.SUBJECT_INFO_KEYS` (subject
+                identity and phenotype, operator and administrative free text,
+                identifying provenance) from the store's ``recording_metadata``,
+                reduce ``source_file`` and ``bti_pdf_file`` to their final path
+                component, and set the root attribute ``subject_info_excluded`` to
+                true. Recording dates and times, events and channel information are
+                kept. ``rec`` itself is not changed. Default False writes the
+                metadata as earlier releases did.
 
         Returns:
             The store path written.
@@ -498,12 +524,9 @@ class ZarrExporter:
         # the root rather than buried in recording_metadata -- and written by the
         # streaming exporter too, which has no Recording to carry it.
         units_report = rec.metadata.get("channels_tsv_units")
-        # Encoded first and stripped after, so the removal also reaches members
-        # inside values the encoding turns into plain lists and dicts; the
-        # encoding is a new object, so rec.metadata is never touched.
-        recording_metadata = metadata_to_mapping(rec.metadata)
-        if exclude_subject_info:
-            recording_metadata = strip_subject_info(recording_metadata)
+        recording_metadata = _recording_metadata_attr(
+            rec.metadata, exclude_subject_info=exclude_subject_info
+        )
         root.attrs.update(
             {
                 "biosigio_version": _BIOSIGIO_VERSION,
