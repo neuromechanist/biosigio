@@ -31,9 +31,12 @@ from typing import Any
 # so "Sex:", "birth_date" and "Patient Name" match while "subjects" does not. A
 # matching member is removed whole, whatever its value. Most entries are
 # spellings an importer, or a library biosigIO reads through, produces; the
-# generic ones cover what a caller passes in recording_metadata. Recording start
-# dates and times (startdate, starttime, meas_date, recording_date) are left out
-# on purpose: an acquisition date not linked to a subject is kept.
+# generic ones cover what a caller passes in recording_metadata. Left out on
+# purpose: recording start dates and times (startdate, starttime, meas_date,
+# recording_date), since an acquisition date not linked to a subject is kept;
+# and bare "name" and "description", which are too generic to match at any
+# depth (a device or a channel has a name and a description too). A caller's
+# own free-text member under such a name is the caller's to leave out.
 SUBJECT_INFO_KEYS: frozenset[str] = frozenset(
     {
         # EDF/BDF header fields importers/edf.py copies when non-empty: patient
@@ -78,8 +81,6 @@ SUBJECT_INFO_KEYS: frozenset[str] = frozenset(
         "age",
         "handedness",
         "operator",
-        "name",
-        "description",
         # EEGLAB (importers/eeglab.py): EEG.subject, EEG.group (such as patients
         # or controls), and the set name and file name and path the set was
         # saved under, which often carry a subject's name or a local user path.

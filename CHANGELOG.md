@@ -27,7 +27,9 @@ which keep the full notes; releases older than 1.1.0 are listed there only.
   free-text `comments` (EEGLAB's, and WFDB header comments, which carry age, sex and medication in PhysioNet records),
   the read-recovery records `eeglab_fdt_recovered` and `brainvision_header_recovered`,
   and the spellings a caller may pass (pyedflib's `patientname` and `sex`, edfio's identification fields,
-  MNE's `subject_info`, `experimenter` and subject fields, and generic ones such as `age`, `handedness`, `name` and `description`).
+  MNE's `subject_info`, `experimenter` and subject fields, and generic ones such as `age` and `handedness`).
+  Bare `name` and `description` are not matched, being too generic;
+  a caller's free-text member under either is the caller's to leave out.
   It also reduces `source_file` and `bti_pdf_file` to their final path component.
   It keeps the recording start date and time, the events and their label map,
   each channel's label, type, unit and prefilter text, and the source file name.
