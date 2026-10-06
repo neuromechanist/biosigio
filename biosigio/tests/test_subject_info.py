@@ -9,6 +9,8 @@ call it are tested in ``test_zarr_subject_info.py``.
 
 import copy
 import datetime
+import pathlib
+import re
 import types
 
 import numpy as np
@@ -57,8 +59,6 @@ SPELLINGS_BY_SOURCE = {
         "age",
         "handedness",
         "operator",
-        "name",
-        "description",
     ],
     "EEGLAB importer": ["subject", "group", "setname", "filename", "filepath", "comments"],
     "WFDB importer": ["comments", "record_name"],
@@ -134,6 +134,29 @@ def test_near_miss_names_are_kept():
     out = strip_subject_info(meta)
     assert out == meta
     assert list(out) == list(meta)
+
+
+def test_technical_name_and_description_at_depth_are_kept():
+    """The OTB importer parses its XML into this shape (a device's model name, a
+    channel's electrode description); generic names like these never match."""
+    meta = {
+        "device": {"name": "Sessantaquattro", "sampling_frequency": 2000, "ad_bits": 16},
+        "channels": {"CH1": {"description": "Ch1 HD-sEMG grid", "gain": 150}},
+        "name": "caller's own field",
+        "description": "caller's own field",
+    }
+    assert strip_subject_info(meta) == meta
+
+
+def test_docs_list_exactly_the_constant():
+    """docs/formats/zarr.md names every member the option removes, and no other."""
+    page = pathlib.Path(__file__).resolve().parents[2] / "docs/formats/zarr.md"
+    if not page.exists():
+        pytest.skip("docs not present in this install")
+    text = page.read_text()
+    block = text[text.index("**What the option removes.**") : text.index("A name matches after")]
+    documented = set(re.findall(r"`([a-z_]+)`", block)) - {"recording_metadata"}
+    assert documented == SUBJECT_INFO_KEYS
 
 
 @pytest.mark.parametrize("key", ["startdate", "starttime", "meas_date", "recording_date"])

@@ -180,8 +180,8 @@ stream_to_zarr('recording.edf', 'recording.zarr',
 **What the option removes.** Every member of `recording_metadata` whose name is in `biosigio.SUBJECT_INFO_KEYS`:
 `patientcode`, `gender`, `sex`, `birthdate`, `birthday`, `dob`, `age`, `hand`, `handedness`, `weight`, `height`,
 `patient`, `patient_name`, `patientname`, `patient_id`, `patient_additional`, `participant_id`, `subject`, `subject_id`, `subject_info`, `his_id`,
-`first_name`, `middle_name`, `last_name`, `name`, `group`,
-`technician`, `operator`, `experimenter`, `admincode`, `equipment`, `recording_additional`, `description`, `comments`,
+`first_name`, `middle_name`, `last_name`, `group`,
+`technician`, `operator`, `experimenter`, `admincode`, `equipment`, `recording_additional`, `comments`,
 `local_patient_identification`, `local_recording_identification`,
 `setname`, `filename`, `filepath`, `record_name`,
 and the read-recovery records `eeglab_fdt_recovered` and `brainvision_header_recovered`, whose contents are file names.
@@ -200,7 +200,10 @@ so a local directory, and the user name it may contain, never reaches the store.
 the recording start date and time (`startdate`, `starttime`, `meas_date`, `recording_date`; an acquisition date not linked to a subject is retained),
 the events and their label map, every channel's label, type, unit and prefilter text,
 and the file name in `source_file`, which can carry a BIDS label such as `sub-01`.
-Bare `name` and `description` are removed because no importer writes a technical member under either.
+Bare `name` and `description` are not matched:
+they are too generic to match at any depth, since a device or a channel has a name and a description too.
+A caller's own free-text member under either name is the caller's to leave out;
+the option removes members by name, and it is not a verification that a store holds no subject information.
 
 The recording or dict passed in is not changed.
 `biosigio.strip_subject_info(metadata)` applies the same removal to any metadata mapping and returns a new dict,
