@@ -36,8 +36,9 @@ One Zarr v3 root group holds the whole recording. Both the writer and the reader
   attrs: biosigio_version, format="biosigio-zarr", format_version,
          source_format, modality_rates, dtype, view_downsample,
          view_chunk_columns, anti_alias_filter, channel_groups,
-         recording_metadata, channels_tsv_units (only when a BIDS
-         channels.tsv was applied), created_utc, note
+         recording_metadata, subject_info_excluded (only when
+         exported with exclude_subject_info=True), channels_tsv_units
+         (only when a BIDS channels.tsv was applied), created_utc, note
 
   <modality>_<rate>hz/         one group per (modality, native rate)
     attrs: modality, rate, original_rate, n_channels, n_samples, channels[],
@@ -153,6 +154,40 @@ Both are additive, so `format_version` stays at 2.
 
 `force_modality` (streaming only) still wins over the sidecar for **grouping**: it pins every channel to one modality, matching the BIDS datatype suffix a converter is working from, while the sidecar's `type` still sets each channel's `channel_type`.
 
+## Subject information
+
+A store holds the signal, the events, channel names, types and units, and technical recording metadata;
+information about the subject belongs at dataset scope, in a BIDS `participants.tsv`, not in every recording's store.
+Some source headers carry it anyway, and the importers copy it into the recording metadata:
+the EDF/BDF patient code, sex, birth date, name and additional patient text,
+operator and administrative free text (technician, administrative code, equipment, additional recording text),
+EEGLAB's `subject` and `group`,
+and free-text `comments` (EEGLAB's, and WFDB header comments, which in PhysioNet records carry age, sex, diagnoses and medication).
+
+Pass `exclude_subject_info=True` to leave those members out of a store's `recording_metadata`.
+Both writers take it, `Recording.to_zarr` (and `ZarrExporter.export`) and `stream_to_zarr`,
+and on the streaming path it also applies to the caller's `recording_metadata` dict:
+
+```python
+rec.to_zarr('recording.zarr', exclude_subject_info=True)
+
+stream_to_zarr('recording.edf', 'recording.zarr',
+               recording_metadata=meta, exclude_subject_info=True)
+```
+
+The members removed are the names in `biosigio.SUBJECT_INFO_KEYS`, matched case-insensitively at any depth of the metadata
+(through nested objects, such as an older store's `recording_info`, and through lists),
+and each is removed whatever its value, an empty one included.
+Every other member is kept, in its original order.
+The recording or dict passed in is not changed.
+A store written this way carries the root attribute `subject_info_excluded: true`,
+so a reader or a sweep can tell that the absence is deliberate;
+it records nothing about what was removed.
+`biosigio.strip_subject_info(metadata)` applies the same removal to any metadata mapping and returns a new dict.
+
+The default, `exclude_subject_info=False`, writes the metadata exactly as earlier releases did and adds no attribute.
+The importer reads stores with and without these members and the attribute.
+
 ## Reading a store
 
 Read a store back into a `Recording` with `Recording.from_file`. The `.zarr` extension is auto-detected, or pass `importer='zarr'` explicitly:
@@ -226,6 +261,7 @@ The exporter defaults follow the store specification. Override any of them as ke
 | `shard_seconds` | 300 | Level-0 sequential-read grain, rounded to whole chunks |
 | `view_chunk_columns` | 1024 | Columns per `view/*` chunk, capped by the level's length |
 | `compressor_level` | 5 | zstd compression level (Blosc codec) |
+| `exclude_subject_info` | `False` | Leave subject information out of `recording_metadata` (see [Subject information](#subject-information)); `stream_to_zarr` takes it too |
 
 **The pyramid stopping rule.** A level is built, and then the loop stops once the level just built is at or below `min_view_samples`. So the floor bounds the level a further one would have been built *from*, not the shortest level in the store: the final level can itself be shorter than `min_view_samples`. A 30000-sample level 0 at the defaults gives 7500, 1875, and 468; the 468 is written because 1875 was still above the floor, and no level 4 follows because 468 is not.
 
