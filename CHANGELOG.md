@@ -10,6 +10,23 @@ Entries before 1.2.9 are condensed from the
 [GitHub Releases](https://github.com/neuromechanist/biosigio/releases),
 which keep the full notes; releases older than 1.1.0 are listed there only.
 
+## [Unreleased]
+
+### Added
+
+- `exclude_subject_info` on `Recording.to_zarr`, `ZarrExporter.export` and `stream_to_zarr`.
+  A store holds the data, the events, channel names, types and units and technical recording metadata,
+  and says nothing about the subject, whose information belongs at dataset scope (`participants.tsv`).
+  With `exclude_subject_info=True` the store's `recording_metadata` leaves out the members named in the new
+  `biosigio.SUBJECT_INFO_KEYS`: the EDF/BDF patient code, sex, birth date, name and additional patient text,
+  the technician, administrative code, equipment and additional recording text,
+  EEGLAB's `subject` and `group`, and free-text `comments` (EEGLAB, and WFDB header comments, which carry age, sex and medication in PhysioNet records).
+  Names match case-insensitively at any depth, so an older store's `recording_info` is covered,
+  and on the streaming path the caller's `recording_metadata` dict is covered too.
+  Such a store carries the root attribute `subject_info_excluded: true` and nothing about what was removed.
+  The default, `False`, writes the same store as 1.2.10.
+  `biosigio.strip_subject_info` applies the same removal to any metadata mapping without modifying it.
+
 ## [1.2.10] - 2026-09-29
 
 **This patch release contains breaking changes.**

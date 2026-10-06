@@ -16,6 +16,17 @@ serving model.
       show_source: true
       members: true
 
+## Subject information
+
+`exclude_subject_info=True` leaves subject information out of the store; see
+[Subject information](../../formats/zarr.md#subject-information).
+
+::: biosigio.exporters.subject_info
+    options:
+      show_root_heading: true
+      show_source: true
+      members: true
+
 ## Usage Example
 
 ```python
@@ -24,4 +35,5 @@ from biosigio import Recording
 rec = Recording.from_file("data.edf")
 rec.to_zarr("out.zarr")                 # int16 by default (per-channel scale/offset)
 rec.to_zarr("lossless.zarr", dtype="float32")
+rec.to_zarr("no-subject.zarr", exclude_subject_info=True)
 ```
