@@ -41,6 +41,7 @@ KEPT_TECHNICAL = frozenset(
         "starttime",
         "annotation_status",
         "annotation_error",
+        "wfdb_annotations",
         # EEGLAB (importers/eeglab.py)
         "device",
         "srate",
@@ -91,6 +92,24 @@ def subject_members(value) -> set[str]:
     elif isinstance(value, list | tuple):
         for item in value:
             found |= subject_members(item)
+    return found
+
+
+def subject_member_paths(value, prefix: str = "") -> set[str]:
+    """Dotted paths of every member, at any depth outside the label-keyed maps,
+    whose name matches a subject-information key. A matching member is removed
+    whole, so the walk does not descend into it; list items add ``[]``."""
+    found: set[str] = set()
+    if isinstance(value, dict):
+        for key, item in value.items():
+            path = f"{prefix}{key}"
+            if is_subject_info_key(key):
+                found.add(path)
+            elif key not in LABEL_KEYED_MEMBERS:
+                found |= subject_member_paths(item, path + ".")
+    elif isinstance(value, list | tuple):
+        for item in value:
+            found |= subject_member_paths(item, prefix + "[].")
     return found
 
 

@@ -43,7 +43,11 @@ from biosigio import (  # noqa: E402
     stream_to_zarr,
 )
 from biosigio.tests.real_data import fetch_real_recording  # noqa: E402
-from biosigio.tests.subject_info_helpers import subject_members, unclassified  # noqa: E402
+from biosigio.tests.subject_info_helpers import (  # noqa: E402
+    subject_member_paths,
+    subject_members,
+    unclassified,
+)
 
 # Pinned to a released version so the bytes cannot change under the assertions.
 URL = "https://data.nemar.org/nm000181/v1.0.0/sub-2109/eeg/sub-2109_task-clinical_eeg.edf"
@@ -103,9 +107,12 @@ def test_every_member_of_the_real_file_is_classified(edf, header):
     """Every top-level member the importer emits for this file is kept as
     technical or removed as subject information, and every pyedflib header
     field but the start date is subject information."""
-    leftover = unclassified(Recording.from_file(edf).metadata)
+    metadata = Recording.from_file(edf).metadata
+    leftover = unclassified(metadata)
+    matched = subject_member_paths(metadata)
     header_fields = {f for f in set(header) - {"startdate"} if not is_subject_info_key(f)}
     assert leftover == set()
+    assert matched == {"birthdate"}
     assert header_fields == set()
 
 
