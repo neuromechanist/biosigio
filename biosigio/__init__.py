@@ -18,6 +18,11 @@ from .exceptions import (
     is_resource_exhaustion,
 )
 from .exporters.edf import EDFExporter
+from .exporters.subject_info import (
+    SUBJECT_INFO_EXCLUDED_ATTR,
+    SUBJECT_INFO_KEYS,
+    strip_subject_info,
+)
 from .exporters.zarr_stream import stream_to_zarr
 from .importers.trigno import TrignoImporter
 from .version import __version__, __version_info__
@@ -27,6 +32,9 @@ __all__ = [
     "TrignoImporter",
     "EDFExporter",
     "stream_to_zarr",
+    "SUBJECT_INFO_KEYS",
+    "SUBJECT_INFO_EXCLUDED_ATTR",
+    "strip_subject_info",
     "BiosigIOError",
     "UnsupportedFormatError",
     "FileReadError",
