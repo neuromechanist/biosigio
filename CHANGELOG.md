@@ -15,17 +15,34 @@ which keep the full notes; releases older than 1.1.0 are listed there only.
 ### Added
 
 - `exclude_subject_info` on `Recording.to_zarr`, `ZarrExporter.export` and `stream_to_zarr`.
-  A store holds the data, the events, channel names, types and units and technical recording metadata,
-  and says nothing about the subject, whose information belongs at dataset scope (`participants.tsv`).
-  With `exclude_subject_info=True` the store's `recording_metadata` leaves out the members named in the new
-  `biosigio.SUBJECT_INFO_KEYS`: the EDF/BDF patient code, sex, birth date, name and additional patient text,
+  A store holds the data, the events, channel names, types and units and technical recording metadata;
+  the subject's identity and phenotype belong at dataset scope (`participants.tsv`).
+  With `exclude_subject_info=True` the store's `recording_metadata` leaves out every member named in the new
+  `biosigio.SUBJECT_INFO_KEYS`:
+  the EDF/BDF patient code, `gender`, birth date and additional patient text
+  (the EDF importer never copies the patient name; a name arrives only through a caller's `recording_metadata`),
   the technician, administrative code, equipment and additional recording text,
-  EEGLAB's `subject` and `group`, and free-text `comments` (EEGLAB, and WFDB header comments, which carry age, sex and medication in PhysioNet records).
-  Names match case-insensitively at any depth, so an older store's `recording_info` is covered,
-  and on the streaming path the caller's `recording_metadata` dict is covered too.
-  Such a store carries the root attribute `subject_info_excluded: true` and nothing about what was removed.
-  The default, `False`, writes the same store as 1.2.10.
-  `biosigio.strip_subject_info` applies the same removal to any metadata mapping without modifying it.
+  EEGLAB's `subject`, `group`, `setname`, `filename` and `filepath`,
+  WFDB's `record_name`,
+  free-text `comments` (EEGLAB's, and WFDB header comments, which carry age, sex and medication in PhysioNet records),
+  the read-recovery records `eeglab_fdt_recovered` and `brainvision_header_recovered`,
+  and the spellings a caller may pass (pyedflib's `patientname` and `sex`, edfio's identification fields,
+  MNE's `subject_info`, `experimenter` and subject fields, and generic ones such as `age`, `handedness`, `name` and `description`).
+  It also reduces `source_file` and `bti_pdf_file` to their final path component.
+  It keeps the recording start date and time, the events and their label map,
+  each channel's label, type, unit and prefilter text, and the source file name.
+- Names match after normalization (casefolded, non-alphanumeric characters dropped), exactly, never by substring.
+  Matching is by name at any depth, so an older store's `recording_info` and the streaming caller's dict are covered,
+  except inside biosigIO's label-keyed maps `channels_tsv_units` and `channel_labels_deduplicated`.
+  A technical member spelled like a listed name is removed too,
+  and subject information under any other name, or inside a value, is not.
+- A store written with the option carries the root attribute `subject_info_excluded: true`,
+  which records that the option ran, not that the store was verified clean.
+  It is additive, so `format_version` stays at 2,
+  and a re-export without the option does not carry it.
+- `biosigio.strip_subject_info` applies the same removal to any metadata mapping without modifying it,
+  and `biosigio.is_subject_info_key` tests one name.
+- The default, `exclude_subject_info=False`, writes the same store as 1.2.10.
 
 ## [1.2.10] - 2026-09-29
 
@@ -391,6 +408,7 @@ First release since 1.1.3; the internal 1.1.4 and 1.1.5 bumps are folded in.
 - EEGLAB `.set` files with the signal matrix in a sibling `.fdt` file (#94).
 - `bids.apply_events_tsv` to load a BIDS `_events.tsv` into `rec.events`.
 
+[Unreleased]: https://github.com/neuromechanist/biosigio/compare/v1.2.10...HEAD
 [1.2.10]: https://github.com/neuromechanist/biosigio/compare/v1.2.9...v1.2.10
 [1.2.9]: https://github.com/neuromechanist/biosigio/compare/v1.2.8...v1.2.9
 [1.2.8]: https://github.com/neuromechanist/biosigio/compare/v1.2.7...v1.2.8
