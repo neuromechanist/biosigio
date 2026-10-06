@@ -1152,6 +1152,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#subject-information" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Subject information
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#reading-a-store" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2728,6 +2739,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#subject-information" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Subject information
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#reading-a-store" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2832,26 +2854,27 @@
 <a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>  attrs: biosigio_version, format="biosigio-zarr", format_version,
 <a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>         source_format, modality_rates, dtype, view_downsample,
 <a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a>         view_chunk_columns, anti_alias_filter, channel_groups,
-<a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a>         recording_metadata, channels_tsv_units (only when a BIDS
-<a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a>         channels.tsv was applied), created_utc, note
-<a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a>
-<a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a>  &lt;modality&gt;_&lt;rate&gt;hz/         one group per (modality, native rate)
-<a id="__codelineno-2-9" name="__codelineno-2-9" href="#__codelineno-2-9"></a>    attrs: modality, rate, original_rate, n_channels, n_samples, channels[],
-<a id="__codelineno-2-10" name="__codelineno-2-10" href="#__codelineno-2-10"></a>           n_view_levels, view_levels[], view_downsample, view_chunk_columns,
-<a id="__codelineno-2-11" name="__codelineno-2-11" href="#__codelineno-2-11"></a>           chunk_seconds, shard_seconds
-<a id="__codelineno-2-12" name="__codelineno-2-12" href="#__codelineno-2-12"></a>    0                          (n_ch, n_time) level-0 signal, sharded
-<a id="__codelineno-2-13" name="__codelineno-2-13" href="#__codelineno-2-13"></a>      attrs: level=0, rate, source_rate_hz, downsample_factor=1, kind="signal",
-<a id="__codelineno-2-14" name="__codelineno-2-14" href="#__codelineno-2-14"></a>             chunk_samples, shard_samples, anti_aliased, usable_for_inference,
-<a id="__codelineno-2-15" name="__codelineno-2-15" href="#__codelineno-2-15"></a>             scale[], offset[],
-<a id="__codelineno-2-16" name="__codelineno-2-16" href="#__codelineno-2-16"></a>             physical_formula="physical = digital * scale + offset"
-<a id="__codelineno-2-17" name="__codelineno-2-17" href="#__codelineno-2-17"></a>    view/                      min/max render pyramid (not sharded)
-<a id="__codelineno-2-18" name="__codelineno-2-18" href="#__codelineno-2-18"></a>      1, 2, ...                (2, n_ch, n_time_L), axis0 = [min, max]
-<a id="__codelineno-2-19" name="__codelineno-2-19" href="#__codelineno-2-19"></a>        attrs: level, downsample_factor, rate_effective, chunk_columns,
-<a id="__codelineno-2-20" name="__codelineno-2-20" href="#__codelineno-2-20"></a>               kind="minmax_envelope", usable_for_inference=false
-<a id="__codelineno-2-21" name="__codelineno-2-21" href="#__codelineno-2-21"></a>
-<a id="__codelineno-2-22" name="__codelineno-2-22" href="#__codelineno-2-22"></a>  events/
-<a id="__codelineno-2-23" name="__codelineno-2-23" href="#__codelineno-2-23"></a>    onset (f64), duration (f64), code (i32)
-<a id="__codelineno-2-24" name="__codelineno-2-24" href="#__codelineno-2-24"></a>    attrs: label_map {code: description}, n_events
+<a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a>         recording_metadata, subject_info_excluded (only when
+<a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a>         exported with exclude_subject_info=True), channels_tsv_units
+<a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a>         (only when a BIDS channels.tsv was applied), created_utc, note
+<a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a>
+<a id="__codelineno-2-9" name="__codelineno-2-9" href="#__codelineno-2-9"></a>  &lt;modality&gt;_&lt;rate&gt;hz/         one group per (modality, native rate)
+<a id="__codelineno-2-10" name="__codelineno-2-10" href="#__codelineno-2-10"></a>    attrs: modality, rate, original_rate, n_channels, n_samples, channels[],
+<a id="__codelineno-2-11" name="__codelineno-2-11" href="#__codelineno-2-11"></a>           n_view_levels, view_levels[], view_downsample, view_chunk_columns,
+<a id="__codelineno-2-12" name="__codelineno-2-12" href="#__codelineno-2-12"></a>           chunk_seconds, shard_seconds
+<a id="__codelineno-2-13" name="__codelineno-2-13" href="#__codelineno-2-13"></a>    0                          (n_ch, n_time) level-0 signal, sharded
+<a id="__codelineno-2-14" name="__codelineno-2-14" href="#__codelineno-2-14"></a>      attrs: level=0, rate, source_rate_hz, downsample_factor=1, kind="signal",
+<a id="__codelineno-2-15" name="__codelineno-2-15" href="#__codelineno-2-15"></a>             chunk_samples, shard_samples, anti_aliased, usable_for_inference,
+<a id="__codelineno-2-16" name="__codelineno-2-16" href="#__codelineno-2-16"></a>             scale[], offset[],
+<a id="__codelineno-2-17" name="__codelineno-2-17" href="#__codelineno-2-17"></a>             physical_formula="physical = digital * scale + offset"
+<a id="__codelineno-2-18" name="__codelineno-2-18" href="#__codelineno-2-18"></a>    view/                      min/max render pyramid (not sharded)
+<a id="__codelineno-2-19" name="__codelineno-2-19" href="#__codelineno-2-19"></a>      1, 2, ...                (2, n_ch, n_time_L), axis0 = [min, max]
+<a id="__codelineno-2-20" name="__codelineno-2-20" href="#__codelineno-2-20"></a>        attrs: level, downsample_factor, rate_effective, chunk_columns,
+<a id="__codelineno-2-21" name="__codelineno-2-21" href="#__codelineno-2-21"></a>               kind="minmax_envelope", usable_for_inference=false
+<a id="__codelineno-2-22" name="__codelineno-2-22" href="#__codelineno-2-22"></a>
+<a id="__codelineno-2-23" name="__codelineno-2-23" href="#__codelineno-2-23"></a>  events/
+<a id="__codelineno-2-24" name="__codelineno-2-24" href="#__codelineno-2-24"></a>    onset (f64), duration (f64), code (i32)
+<a id="__codelineno-2-25" name="__codelineno-2-25" href="#__codelineno-2-25"></a>    attrs: label_map {code: description}, n_events
 </code></pre></div>
 <p>The group name encodes the served (target) rate, not the source rate, for example <code>eeg_250hz</code> even when the source was recorded at 500 Hz. The two rates are both kept in the group attributes:</p>
 <ul>
@@ -2943,21 +2966,76 @@
 </ul>
 <p>Both are additive, so <code>format_version</code> stays at 2.</p>
 <p><code>force_modality</code> (streaming only) still wins over the sidecar for <strong>grouping</strong>: it pins every channel to one modality, matching the BIDS datatype suffix a converter is working from, while the sidecar's <code>type</code> still sets each channel's <code>channel_type</code>.</p>
+<h2 id="subject-information">Subject information<a class="headerlink" href="#subject-information" title="Permanent link">&para;</a></h2>
+<p>A store holds the signal, the events, channel names, types and units, and technical recording metadata;
+the subject's identity and phenotype (age, sex and the like) belong at dataset scope, in a BIDS <code>participants.tsv</code>.
+Some source headers carry such information anyway, and the importers copy it into the recording metadata:
+the EDF/BDF importer copies the patient code, <code>gender</code> (the header's sex), <code>birthdate</code> and additional patient text,
+and the operator and administrative fields (technician, administrative code, equipment, additional recording text);
+the EEGLAB importer copies <code>subject</code>, <code>group</code>, the set name and the file name and path the set was saved under;
+the WFDB importer copies the record name and the header <code>comments</code>, which in PhysioNet records carry age, sex, diagnoses and medication.
+The EDF importer never copies the patient name;
+a name reaches a store only through a caller's <code>recording_metadata</code>, such as a pyedflib header passed to <code>stream_to_zarr</code>.</p>
+<p>Pass <code>exclude_subject_info=True</code> to leave that information out of a store.
+Both writers take it, <code>Recording.to_zarr</code> (and <code>ZarrExporter.export</code>) and <code>stream_to_zarr</code>,
+and on the streaming path it also applies to the caller's <code>recording_metadata</code> dict:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="n">rec</span><span class="o">.</span><span class="n">to_zarr</span><span class="p">(</span><span class="s1">'recording.zarr'</span><span class="p">,</span> <span class="n">exclude_subject_info</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a>
+<a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a><span class="n">stream_to_zarr</span><span class="p">(</span><span class="s1">'recording.edf'</span><span class="p">,</span> <span class="s1">'recording.zarr'</span><span class="p">,</span>
+<a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a>               <span class="n">recording_metadata</span><span class="o">=</span><span class="n">meta</span><span class="p">,</span> <span class="n">exclude_subject_info</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+</code></pre></div>
+<p><strong>What the option removes.</strong> Every member of <code>recording_metadata</code> whose name is in <code>biosigio.SUBJECT_INFO_KEYS</code>:
+<code>patientcode</code>, <code>gender</code>, <code>sex</code>, <code>birthdate</code>, <code>birthday</code>, <code>dob</code>, <code>age</code>, <code>hand</code>, <code>handedness</code>, <code>weight</code>, <code>height</code>,
+<code>patient</code>, <code>patient_name</code>, <code>patientname</code>, <code>patient_id</code>, <code>patient_additional</code>, <code>participant_id</code>, <code>subject</code>, <code>subject_id</code>, <code>subject_info</code>, <code>his_id</code>,
+<code>first_name</code>, <code>middle_name</code>, <code>last_name</code>, <code>group</code>,
+<code>technician</code>, <code>operator</code>, <code>experimenter</code>, <code>admincode</code>, <code>equipment</code>, <code>recording_additional</code>, <code>comments</code>,
+<code>local_patient_identification</code>, <code>local_recording_identification</code>,
+<code>setname</code>, <code>filename</code>, <code>filepath</code>, <code>record_name</code>,
+and the read-recovery records <code>eeglab_fdt_recovered</code> and <code>brainvision_header_recovered</code>, whose contents are file names.
+A name matches after normalization: casefolded, with every character that is not a letter or a digit dropped,
+so <code>Sex:</code>, <code>birth_date</code> and <code>Patient Name</code> match, while <code>subjects</code> and <code>comments_total</code> do not (never a substring or a prefix).
+Matching is by name at any depth (through nested objects, such as an older store's <code>recording_info</code>, and through lists),
+except inside biosigIO's own label-keyed maps, <code>channels_tsv_units</code> and <code>channel_labels_deduplicated</code>,
+whose keys are channel labels, so a channel labeled <code>Sex</code> keeps its entry there.
+A matching member is removed whole, whatever its value, an empty one included.
+Because matching is by name, a technical member that happens to be spelled like one of these is removed too,
+and subject information held under any other name, or inside a value, is not.
+The option also reduces <code>source_file</code> and <code>bti_pdf_file</code> to their final path component,
+so a local directory, and the user name it may contain, never reaches the store.</p>
+<p><strong>What the option keeps.</strong> Everything else, in its original order:
+the recording start date and time (<code>startdate</code>, <code>starttime</code>, <code>meas_date</code>, <code>recording_date</code>; an acquisition date not linked to a subject is retained),
+the events and their label map, every channel's label, type, unit and prefilter text,
+and the file name in <code>source_file</code>, which can carry a BIDS label such as <code>sub-01</code>.
+Bare <code>name</code> and <code>description</code> are not matched:
+they are too generic to match at any depth, since a device or a channel has a name and a description too.
+A caller's own free-text member under either name is the caller's to leave out;
+the option removes members by name, and it is not a verification that a store holds no subject information.</p>
+<p>The recording or dict passed in is not changed.
+<code>biosigio.strip_subject_info(metadata)</code> applies the same removal to any metadata mapping and returns a new dict,
+and <code>biosigio.is_subject_info_key(name)</code> answers whether one name matches.</p>
+<p>A store written this way carries the root attribute <code>subject_info_excluded: true</code>.
+It records that the option ran on that export, not that the store has been verified clean,
+and nothing about what was removed;
+the store's <code>biosigio_version</code> identifies which release's key list was applied.
+Re-exporting such a store through <code>Recording.from_file(...).to_zarr(...)</code> without the option does not carry the attribute over.
+The attribute is additive, so <code>format_version</code> stays at 2.</p>
+<p>The default, <code>exclude_subject_info=False</code>, writes the metadata exactly as earlier releases did and adds no attribute.
+The importer reads stores with and without these members and the attribute.</p>
 <h2 id="reading-a-store">Reading a store<a class="headerlink" href="#reading-a-store" title="Permanent link">&para;</a></h2>
 <p>Read a store back into a <code>Recording</code> with <code>Recording.from_file</code>. The <code>.zarr</code> extension is auto-detected, or pass <code>importer='zarr'</code> explicitly:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">biosigio</span><span class="w"> </span><span class="kn">import</span> <span class="n">Recording</span>
-<a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a>
-<a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a><span class="c1"># Extension-inferred</span>
-<a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a><span class="n">rec</span> <span class="o">=</span> <span class="n">Recording</span><span class="o">.</span><span class="n">from_file</span><span class="p">(</span><span class="s1">'recording.zarr'</span><span class="p">)</span>
-<a id="__codelineno-6-5" name="__codelineno-6-5" href="#__codelineno-6-5"></a>
-<a id="__codelineno-6-6" name="__codelineno-6-6" href="#__codelineno-6-6"></a><span class="c1"># Explicit importer</span>
-<a id="__codelineno-6-7" name="__codelineno-6-7" href="#__codelineno-6-7"></a><span class="n">rec</span> <span class="o">=</span> <span class="n">Recording</span><span class="o">.</span><span class="n">from_file</span><span class="p">(</span><span class="s1">'recording.zarr'</span><span class="p">,</span> <span class="n">importer</span><span class="o">=</span><span class="s1">'zarr'</span><span class="p">)</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">biosigio</span><span class="w"> </span><span class="kn">import</span> <span class="n">Recording</span>
+<a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a>
+<a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a><span class="c1"># Extension-inferred</span>
+<a id="__codelineno-7-4" name="__codelineno-7-4" href="#__codelineno-7-4"></a><span class="n">rec</span> <span class="o">=</span> <span class="n">Recording</span><span class="o">.</span><span class="n">from_file</span><span class="p">(</span><span class="s1">'recording.zarr'</span><span class="p">)</span>
+<a id="__codelineno-7-5" name="__codelineno-7-5" href="#__codelineno-7-5"></a>
+<a id="__codelineno-7-6" name="__codelineno-7-6" href="#__codelineno-7-6"></a><span class="c1"># Explicit importer</span>
+<a id="__codelineno-7-7" name="__codelineno-7-7" href="#__codelineno-7-7"></a><span class="n">rec</span> <span class="o">=</span> <span class="n">Recording</span><span class="o">.</span><span class="n">from_file</span><span class="p">(</span><span class="s1">'recording.zarr'</span><span class="p">,</span> <span class="n">importer</span><span class="o">=</span><span class="s1">'zarr'</span><span class="p">)</span>
 </code></pre></div>
 <p>The importer reads level 0 of one group, applies the <code>physical = digital * scale + offset</code> dequantization, and restores channels, events, and recording metadata. The view pyramid is render-only and is never read here.</p>
 <p>A store published by the streaming exporter before repeated EDF labels were suffixed can list the same <code>label</code> twice in a group. The importer reads it anyway, suffixing the repeats the same way the EDF importer does (<code>T8-P8-0</code>, <code>T8-P8-1</code>; see <a href="../edf/#repeated-channel-labels">EDF repeated channel labels</a>) and warning, so no channel is dropped. Regenerating such a store from its source EDF writes the suffixed labels into the store itself, which changes its channel names.</p>
 <p>Because the groups in a store can sit at different rates that cannot share biosigIO's single time grid, the importer reconstructs one group at a time. When a store holds a single group it is selected automatically; when it holds more than one, pass the <code>group=</code> selector by group name. Calling <code>from_file</code> on a multi-group store without <code>group=</code> raises an error that lists the available groups:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="c1"># Multi-group store: choose which (modality, rate) group to reconstruct</span>
-<a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a><span class="n">rec</span> <span class="o">=</span> <span class="n">Recording</span><span class="o">.</span><span class="n">from_file</span><span class="p">(</span><span class="s1">'recording.zarr'</span><span class="p">,</span> <span class="n">importer</span><span class="o">=</span><span class="s1">'zarr'</span><span class="p">,</span> <span class="n">group</span><span class="o">=</span><span class="s1">'eeg_250hz'</span><span class="p">)</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="c1"># Multi-group store: choose which (modality, rate) group to reconstruct</span>
+<a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a><span class="n">rec</span> <span class="o">=</span> <span class="n">Recording</span><span class="o">.</span><span class="n">from_file</span><span class="p">(</span><span class="s1">'recording.zarr'</span><span class="p">,</span> <span class="n">importer</span><span class="o">=</span><span class="s1">'zarr'</span><span class="p">,</span> <span class="n">group</span><span class="o">=</span><span class="s1">'eeg_250hz'</span><span class="p">)</span>
 </code></pre></div>
 <p>Reconstruction is at the store's canonical (possibly downsampled) level-0 rate, not the original full-rate signal, because the store is the serving copy and BIDS remains the source of truth.</p>
 <h2 id="format-version-and-provenance">Format version and provenance<a class="headerlink" href="#format-version-and-provenance" title="Permanent link">&para;</a></h2>
@@ -3037,11 +3115,16 @@
 <td>5</td>
 <td>zstd compression level (Blosc codec)</td>
 </tr>
+<tr>
+<td><code>exclude_subject_info</code></td>
+<td><code>False</code></td>
+<td>Leave subject information out of <code>recording_metadata</code> and reduce source paths to a file name (see <a href="#subject-information">Subject information</a>); <code>stream_to_zarr</code> takes it too</td>
+</tr>
 </tbody>
 </table>
 <p><strong>The pyramid stopping rule.</strong> A level is built, and then the loop stops once the level just built is at or below <code>min_view_samples</code>. So the floor bounds the level a further one would have been built <em>from</em>, not the shortest level in the store: the final level can itself be shorter than <code>min_view_samples</code>. A 30000-sample level 0 at the defaults gives 7500, 1875, and 468; the 468 is written because 1875 was still above the floor, and no level 4 follows because 468 is not.</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="c1"># A lossless store with a shorter sequential-read grain</span>
-<a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a><span class="n">rec</span><span class="o">.</span><span class="n">to_zarr</span><span class="p">(</span><span class="s1">'recording.zarr'</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="s1">'float32'</span><span class="p">,</span> <span class="n">shard_seconds</span><span class="o">=</span><span class="mi">120</span><span class="p">)</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a><span class="c1"># A lossless store with a shorter sequential-read grain</span>
+<a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a><span class="n">rec</span><span class="o">.</span><span class="n">to_zarr</span><span class="p">(</span><span class="s1">'recording.zarr'</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="s1">'float32'</span><span class="p">,</span> <span class="n">shard_seconds</span><span class="o">=</span><span class="mi">120</span><span class="p">)</span>
 </code></pre></div>
 
 
