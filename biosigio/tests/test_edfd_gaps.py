@@ -154,6 +154,17 @@ def test_unreadable_time_keeping_annotation_cannot_be_shown_contiguous(tmp_path)
     assert "record 1" in str(info.value)
 
 
+def test_edfd_file_without_an_annotations_signal_cannot_be_shown_contiguous(tmp_path):
+    path = _copy("edfd_contiguous.edf", tmp_path)
+    with open(path, "r+b") as f:
+        f.seek(256 + 16)  # the second signal's label
+        f.write(b"Other".ljust(16, b" "))
+    # pyedflib itself refuses such a file as corrupt before the fallback is reached,
+    # so the check is called directly: it must not guess a start time for the records.
+    with pytest.raises(FileReadError, match="no annotations signal"):
+        _verify(path)
+
+
 # --- Tolerance ----------------------------------------------------------------------
 
 
