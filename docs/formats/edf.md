@@ -55,6 +55,19 @@ The EDF importer in biosigIO (`biosigio.importers.edf`) uses the `pyedflib` pack
 3. Convert channel information to biosigIO's format
 4. Read EDF+/BDF+ annotations into the `events` DataFrame
 
+### EDF+D and BDF+D files with gaps
+
+An EDF+D or BDF+D file gives every data record its own start time, and the records need not be contiguous.
+MNE-Python concatenates them, which would put every sample after a gap earlier on the time axis than it was recorded while the annotations keep their true times (issue #180).
+So biosigIO reads the time-keeping annotation of every record itself, whenever the header's reserved field says EDF+D or BDF+D, and compares each record's start with the end of the one before it (tolerance 1 microsecond).
+
+- A gap, an overlap or a record out of order raises `DiscontinuousRecordingError` (code `discontinuous_recording`, a `FileReadError`) naming the file and every gap as `(start, length)` seconds on the file's own time axis, in its `gaps` attribute.
+  The in-memory importer and `stream_to_zarr` both raise it, before MNE is touched, so the MNE-backed fallback is not needed to get the error.
+- A file labeled discontinuous whose records are contiguous is read as above and flagged `edf_discontinuous_verified_contiguous`.
+- A time-keeping annotation that cannot be read raises `FileReadError`, since continuity cannot be shown.
+
+Converting a gapped recording is not supported yet; it waits for a gap-aware design.
+
 ### Tolerant fallback for non-compliant-but-readable files
 
 `pyedflib`'s compliance checker rejects some real-world EDF/BDF files outright
@@ -65,7 +78,7 @@ discarding the recording:
 - a channel with `physical_min == physical_max` (a reference electrode in a
   referential montage, constant by construction; issue #109)
 - a numeric header field padded with NUL bytes instead of ASCII spaces
-- a file correctly marked EDF+D (discontinuous)
+- a file correctly marked EDF+D (discontinuous), but only when its data records are in fact contiguous; see [EDF+D and BDF+D files with gaps](#edfd-and-bdfd-files-with-gaps)
 
 A fourth, a late first time-keeping onset, is recovered by `pyedflib` itself and needs no MNE; see [Late first time-keeping onset](#late-first-time-keeping-onset).
 
@@ -94,6 +107,8 @@ A recovered read is flagged in the recording's metadata:
   `degenerate_physical_range`, `malformed_numeric_field`,
   `discontinuous_datarecords`, `late_timekeeping_onset`)
 - each affected channel additionally carries `degenerate_physical_range: True`
+
+A read of a file labeled EDF+D or BDF+D whose data records were checked and found contiguous also sets `edf_discontinuous_verified_contiguous` (`True`).
 
 A genuinely truncated or corrupt file is unaffected by this: only the four
 conditions are treated as recoverable, and a size check runs before any
