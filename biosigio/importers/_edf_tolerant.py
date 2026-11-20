@@ -93,6 +93,7 @@ import tempfile
 from collections import Counter
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
+from decimal import Decimal
 from itertools import accumulate
 from typing import Any
 
@@ -111,6 +112,16 @@ DISCONTINUOUS_DATARECORDS = "discontinuous_datarecords"
 # Not returned by `classify_pyedflib_error` (the refusal message is generic):
 # `probe_timekeeping_onset` proves it from the file, and the readers record it.
 LATE_TIMEKEEPING_ONSET = "late_timekeeping_onset"
+
+# Metadata key set on a Recording (and a streamed store) read from an EDF+D/BDF+D
+# file whose data records were checked and found contiguous (see
+# `verify_records_contiguous`).
+DISCONTINUOUS_VERIFIED_CONTIGUOUS_KEY = "edf_discontinuous_verified_contiguous"
+# How far a record's time-keeping onset may differ from the previous record's end
+# before the pair counts as a gap. TAL onsets are decimal text with at most a few
+# digits, so a real contiguous file agrees to far better than this; one microsecond
+# is a small fraction of a sample at any rate a physiological recording uses.
+RECORD_ONSET_TOLERANCE_S = Decimal("1e-6")
 
 # Labels of the EDF+/BDF+ annotations (TAL) channel, which MNE (like pyedflib)
 # does not list as a signal; matched exactly, as MNE's ``_find_tal_idx`` does.
@@ -312,6 +323,93 @@ def _check_not_truncated(filepath: str, probe: EdfHeaderProbe, n_records: int) -
             f"{filepath}: file is truncated (expected at least {expected} bytes "
             f"for {n_records} data record(s), found {actual})"
         )
+
+
+# --- Discontinuous EDF+D/BDF+D (issue #180) -------------------------------------
+# An EDF+D/BDF+D file gives every data record its own start time in its time-keeping
+# TAL, and the records need not be contiguous. MNE (the fallback reader below) reads
+# the reserved field without acting on it and concatenates the records, so every
+# sample after a gap lands earlier than it was recorded while the annotations keep
+# their true times. The TALs are therefore read here, directly, and a file with a gap
+# is refused before MNE is asked for anything.
+
+
+def _annotation_span(probe: EdfHeaderProbe, bytes_per_sample: int) -> tuple[int, int, int]:
+    """``(offset in a record, width in bytes, record size in bytes)`` of the first annotations signal.
+
+    EDF+ puts the time-keeping TAL in the FIRST annotations signal of each record.
+    Raises ``FileReadError`` when the header lists none.
+    """
+    from ..exceptions import FileReadError
+
+    offset = 0
+    span: tuple[int, int] | None = None
+    for ch in probe.channels:
+        width = ch["samples_per_record"] * bytes_per_sample
+        if span is None and ch["label"] in _ANNOTATION_LABELS:
+            span = (offset, width)
+        offset += width
+    if span is None:
+        raise FileReadError(
+            "this file is labeled EDF+D/BDF+D but has no annotations signal, so the start "
+            "time of its data records cannot be read"
+        )
+    return span[0], span[1], offset
+
+
+def verify_records_contiguous(filepath: str, probe: EdfHeaderProbe | None = None) -> bool:
+    """Whether ``filepath`` is an EDF+D/BDF+D file whose records were verified contiguous.
+
+    Returns ``False`` without reading any record when the reserved field does not
+    say ``EDF+D`` or ``BDF+D`` (case-insensitive, as :func:`read_edf_tolerant` treats
+    the ``EDF+`` prefix). For a +D file it reads the time-keeping onset of every data
+    record from the annotations signal itself and returns ``True`` when each record
+    starts within :data:`RECORD_ONSET_TOLERANCE_S` of the end of the one before it:
+    a file labeled discontinuous whose records are in fact contiguous, which is
+    readable like any continuous one.
+
+    Raises :class:`~biosigio.exceptions.DiscontinuousRecordingError` naming every
+    gap (start and length, seconds) when any record starts elsewhere, an overlap
+    or a record out of order included, and
+    :class:`~biosigio.exceptions.FileReadError` when a record's time-keeping onset
+    cannot be read, since continuity cannot be shown then. A header count of ``-1``
+    ("still recording") is replaced by what the file size holds.
+    """
+    from ..exceptions import DiscontinuousRecordingError, FileReadError, TimeGap
+
+    if probe is None:
+        probe = probe_edf_header(filepath)
+    if not probe.reserved.upper().startswith(("EDF+D", "BDF+D")):
+        return False
+
+    offset, width, record_bytes = _annotation_span(probe, _bytes_per_sample(filepath))
+    n_records = probe.number_of_datarecords
+    if n_records < 0:
+        n_records = max(0, (os.path.getsize(filepath) - probe.header_bytes) // record_bytes)
+    duration = Decimal(repr(probe.duration_of_data_record))
+
+    onsets: list[Decimal] = []
+    with open(filepath, "rb") as f:
+        for index in range(n_records):
+            f.seek(probe.header_bytes + index * record_bytes + offset)
+            block = f.read(width)
+            keeping = _first_timekeeping_onset(block)
+            if keeping is None:
+                raise FileReadError(
+                    f"{filepath}: data record {index} has no readable time-keeping "
+                    "annotation, so this EDF+D/BDF+D file cannot be shown to be contiguous"
+                )
+            units, digits = keeping
+            onsets.append(Decimal(units).scaleb(-digits))
+
+    gaps = []
+    for before, after in zip(onsets, onsets[1:], strict=False):
+        length = after - before - duration
+        if abs(length) > RECORD_ONSET_TOLERANCE_S:
+            gaps.append(TimeGap(float(before + duration), float(length)))
+    if gaps:
+        raise DiscontinuousRecordingError(filepath, gaps, float(duration))
+    return True
 
 
 # --- Late first time-keeping onset (issue #145) -------------------------------
@@ -654,6 +752,9 @@ class EdfFallbackRecording:
     # ``{new_label: header_label}`` for every repeated header label that was
     # suffixed (see :func:`~biosigio.importers._labels.unique_channel_labels`).
     renamed_labels: dict[str, str] = field(default_factory=dict)
+    # True when the file is labeled EDF+D/BDF+D and its data records were checked
+    # and found contiguous (see :func:`verify_records_contiguous`).
+    verified_contiguous: bool = False
 
 
 def _expected_gain(dimension: str) -> float:
@@ -804,6 +905,10 @@ def read_edf_tolerant(filepath: str, reason: str) -> EdfFallbackRecording:
     shape: a degenerate reference channel AND a "Status" channel in the same
     recording).
 
+    An EDF+D/BDF+D file is checked first (:func:`verify_records_contiguous`): one
+    with a gap raises :class:`~biosigio.exceptions.DiscontinuousRecordingError`, one
+    whose records are contiguous is read and flagged ``verified_contiguous``.
+
     Raises ``ImportError`` if MNE (the ``meg`` extra) is not installed, and
     ``OSError``/``FileReadError`` for anything that turns out not to be
     recoverable after all: a truncation the safety net catches, a per-channel
@@ -825,10 +930,14 @@ def read_edf_tolerant(filepath: str, reason: str) -> EdfFallbackRecording:
     from ..exceptions import FileReadError
     from ._mne_common import require_mne
 
-    mne = require_mne()
-
     probe = probe_edf_header(filepath)
     _check_not_truncated(filepath, probe, probe.number_of_datarecords)
+    # Before MNE is touched: it would concatenate the records of a gapped EDF+D file
+    # onto one contiguous axis (issue #180), so a file with a gap is refused here,
+    # whatever else about it sent it down this path, and without needing MNE at all.
+    verified_contiguous = verify_records_contiguous(filepath, probe)
+
+    mne = require_mne()
 
     # stim_channel=False: see the module docstring -- without it, MNE would
     # auto-detect a channel named e.g. "Status" as a trigger channel and give
@@ -897,4 +1006,5 @@ def read_edf_tolerant(filepath: str, reason: str) -> EdfFallbackRecording:
         file_duration=(raw.n_times / sfreq) if sfreq else 0.0,
         datarecord_duration=probe.duration_of_data_record,
         renamed_labels=renamed,
+        verified_contiguous=verified_contiguous,
     )

@@ -254,6 +254,7 @@ class _EdfSource:
 
         from ..exceptions import MixedSamplingRateError
         from ..importers._edf_tolerant import (
+            DISCONTINUOUS_VERIFIED_CONTIGUOUS_KEY,
             LATE_TIMEKEEPING_ONSET,
             classify_pyedflib_error,
             probe_timekeeping_onset,
@@ -309,6 +310,8 @@ class _EdfSource:
                     raise classify_read_error(fallback_exc, filepath) from fallback_exc
                 self.extra_metadata["edf_tolerant_read"] = True
                 self.extra_metadata["edf_tolerant_read_reason"] = reason
+                if fallback.verified_contiguous:
+                    self.extra_metadata[DISCONTINUOUS_VERIFIED_CONTIGUOUS_KEY] = True
                 if fallback.renamed_labels:
                     self.extra_metadata[DEDUPLICATED_LABELS_KEY] = dict(fallback.renamed_labels)
 
