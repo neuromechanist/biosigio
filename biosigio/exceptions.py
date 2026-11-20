@@ -24,7 +24,7 @@ from __future__ import annotations
 
 import errno
 from pathlib import PurePath
-from typing import NoReturn
+from typing import NamedTuple, NoReturn
 
 
 class BiosigIOError(ValueError):
@@ -57,6 +57,49 @@ class NotContinuousRecordingError(FileReadError):
     valid, but the serving/viewer path only handles continuous recordings."""
 
     code = "not_continuous"
+
+
+class TimeGap(NamedTuple):
+    """A stretch of time with no data records, in seconds on the file's own time axis
+    (the one its time-keeping annotations use). ``length`` is negative when records
+    overlap or run backwards."""
+
+    start: float
+    length: float
+
+
+# How many gaps an error message lists before it summarizes the rest.
+_GAPS_IN_MESSAGE = 10
+
+
+class DiscontinuousRecordingError(FileReadError):
+    """An EDF+D/BDF+D file whose data records are not contiguous in time.
+
+    The format stores each record with its own start time, so a gap leaves the
+    samples after it later on the real time axis than their position in the file
+    suggests. biosigIO has no gap-aware representation yet, and reading such a file
+    as if it were contiguous would place every sample after a gap too early, so
+    the file is refused instead (biosigIO issue #180).
+
+    ``filepath`` is the file and ``gaps`` every discontinuity found, in file order,
+    as :class:`TimeGap` ``(start, length)`` pairs in seconds."""
+
+    code = "discontinuous_recording"
+
+    def __init__(self, filepath: str, gaps: list[TimeGap], record_duration: float):
+        self.filepath = filepath
+        self.gaps = list(gaps)
+        self.record_duration = record_duration
+        shown = ", ".join(f"{g.length:g} s at {g.start:g} s" for g in self.gaps[:_GAPS_IN_MESSAGE])
+        more = len(self.gaps) - _GAPS_IN_MESSAGE
+        if more > 0:
+            shown += f", and {more} more"
+        super().__init__(
+            f"{filepath}: this EDF+D/BDF+D file has {len(self.gaps)} discontinuity(ies) "
+            f"between data records ({shown}), so its samples do not lie on one continuous "
+            "time axis. biosigIO cannot convert a gapped recording yet and refuses it "
+            "rather than place samples at the wrong time."
+        )
 
 
 class CorruptFileError(FileReadError):
@@ -93,6 +136,10 @@ REASONS: dict[str, str] = {
     CorruptFileError.code: (
         "This recording's data file appears truncated or corrupt, so the viewer "
         "could not be generated."
+    ),
+    DiscontinuousRecordingError.code: (
+        "This recording has gaps between its data records (EDF+D/BDF+D), which "
+        "the viewer cannot represent yet."
     ),
     EmptyRecordingError.code: "This recording contains no signal channels to display.",
     MixedSamplingRateError.code: (

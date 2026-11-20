@@ -8,6 +8,7 @@ import pyedflib
 from ..core.emg import Recording
 from ..exceptions import MixedSamplingRateError, classify_read_error, is_resource_exhaustion
 from ._edf_tolerant import (
+    DISCONTINUOUS_VERIFIED_CONTIGUOUS_KEY,
     LATE_TIMEKEEPING_ONSET,
     classify_pyedflib_error,
     probe_timekeeping_onset,
@@ -259,6 +260,9 @@ class EDFImporter(BaseImporter):
             "file_duration": fallback.file_duration,
             "datarecord_duration": fallback.datarecord_duration,
         }
+        if fallback.verified_contiguous:
+            # Labeled EDF+D/BDF+D, but every record starts where the last ended.
+            file_info[DISCONTINUOUS_VERIFIED_CONTIGUOUS_KEY] = True
         return pairs, fallback.events, file_info, fallback.renamed_labels
 
     def load(self, filepath: str, *, mixed_rate: str = "error") -> Recording:
