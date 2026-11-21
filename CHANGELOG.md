@@ -10,7 +10,11 @@ Entries before 1.2.9 are condensed from the
 [GitHub Releases](https://github.com/neuromechanist/biosigio/releases),
 which keep the full notes; releases older than 1.1.0 are listed there only.
 
-## [Unreleased]
+## [1.2.14] - 2026-11-21
+
+This patch release stops reading a gapped EDF+D or BDF+D file onto a wrong time axis (#180).
+Such a file is now refused with `DiscontinuousRecordingError`, a subclass of `FileReadError`, naming each gap; a +D file whose records are contiguous is still read and flagged.
+Converting a gapped recording waits for a gap-aware design.
 
 ### Fixed
 
@@ -551,7 +555,7 @@ First release since 1.1.3; the internal 1.1.4 and 1.1.5 bumps are folded in.
 - EEGLAB `.set` files with the signal matrix in a sibling `.fdt` file (#94).
 - `bids.apply_events_tsv` to load a BIDS `_events.tsv` into `rec.events`.
 
-[Unreleased]: https://github.com/neuromechanist/biosigio/compare/v1.2.13...HEAD
+[1.2.14]: https://github.com/neuromechanist/biosigio/compare/v1.2.13...v1.2.14
 [1.2.13]: https://github.com/neuromechanist/biosigio/compare/v1.2.12...v1.2.13
 [1.2.12]: https://github.com/neuromechanist/biosigio/compare/v1.2.11...v1.2.12
 [1.2.11]: https://github.com/neuromechanist/biosigio/compare/v1.2.10...v1.2.11
