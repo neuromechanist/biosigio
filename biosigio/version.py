@@ -1,7 +1,7 @@
 """Version information for biosigIO."""
 
-__version__ = "1.2.13"
-__version_info__ = (1, 2, 13)
+__version__ = "1.2.14"
+__version_info__ = (1, 2, 14)
 
 
 def get_version() -> str:
