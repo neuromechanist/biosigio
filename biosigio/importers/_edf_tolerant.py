@@ -389,22 +389,27 @@ def _lenient_timekeeping_onset(block: bytes) -> tuple[int, int] | None:
     if match is None:
         return None
     signs, whole, fraction = match.groups()
-    units = int(whole + (fraction or b""))
+    try:
+        units = int(whole + (fraction or b""))
+    except ValueError:  # more digits than Python converts to an int: not an onset
+        return None
     return (-units if signs[-1:] == b"-" else units), len(fraction or b"")
 
 
-def _pair_tolerance(digits_a: int, digits_b: int, half_sample: Decimal | None) -> Decimal:
+def _pair_tolerance(
+    digits_a: int, digits_b: int, half_sample: Decimal | None, duration: Decimal
+) -> Decimal:
     """How far two consecutive record onsets may be from exactly one record apart.
 
     Each onset is decimal text rounded to its digits, so the difference of two is off
     by up to ``10**-min(digits)``: three-decimal onsets of non-round record durations
     are not exact. The floor is :data:`RECORD_ONSET_TOLERANCE_S`; the ceiling is half a
     sample period of the fastest signal (``half_sample``), because a gap shorter than
-    that cannot move a sample to another sample.
+    that cannot move a sample to another sample. A file with no data signal has no
+    sample period, and the ceiling is then half a record (``duration``).
     """
     tolerance = Decimal(10) ** -min(digits_a, digits_b)
-    if half_sample is not None:
-        tolerance = min(tolerance, half_sample)
+    tolerance = min(tolerance, half_sample if half_sample is not None else duration / 2)
     return max(tolerance, RECORD_ONSET_TOLERANCE_S)
 
 
@@ -479,7 +484,7 @@ def verify_records_contiguous(filepath: str, probe: EdfHeaderProbe | None = None
     gaps = []
     for i in range(len(onsets) - 1):
         length = onsets[i + 1] - onsets[i] - duration
-        if abs(length) > _pair_tolerance(digits[i], digits[i + 1], half_sample):
+        if abs(length) > _pair_tolerance(digits[i], digits[i + 1], half_sample, duration):
             gaps.append(TimeGap(float(onsets[i] + duration), float(length)))
     if gaps:
         raise DiscontinuousRecordingError(filepath, gaps, float(duration))

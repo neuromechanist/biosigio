@@ -403,3 +403,24 @@ def test_every_error_code_has_a_default_reason(cls):
     from biosigio.exceptions import REASONS
 
     assert cls.code in REASONS
+
+
+def test_onset_with_an_absurd_number_of_digits_is_unreadable_not_a_crash():
+    """Python refuses to turn a digit string of several thousand characters into an
+    int; that is an onset that cannot be read, not a ValueError out of the verifier."""
+    from biosigio.importers._edf_tolerant import _lenient_timekeeping_onset
+
+    assert _lenient_timekeeping_onset(b"+" + b"1" * 5000 + b"\x14\x14\x00") is None
+    assert _lenient_timekeeping_onset(b"+12.5\x14\x14\x00") == (125, 1)
+
+
+def test_a_file_with_no_data_signal_has_its_tolerance_held_to_half_a_record():
+    from decimal import Decimal
+
+    from biosigio.importers._edf_tolerant import _pair_tolerance
+
+    # Whole-number onsets round by up to a second; with no sample period to cap it,
+    # half of a 2 s record is the ceiling.
+    assert _pair_tolerance(0, 0, None, Decimal("2")) == Decimal("1")
+    # With a sample period the smaller of the two caps wins.
+    assert _pair_tolerance(0, 0, Decimal("0.05"), Decimal("2")) == Decimal("0.05")
