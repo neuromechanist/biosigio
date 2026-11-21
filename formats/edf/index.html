@@ -23,7 +23,7 @@
       
       
       <link rel="icon" href="../../assets/images/favicon.png">
-      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.7">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.8.2">
     
     
       
@@ -31,10 +31,10 @@
       
     
     
-      <link rel="stylesheet" href="../../assets/stylesheets/main.ec1eaa64.min.css">
+      <link rel="stylesheet" href="../../assets/stylesheets/main.57a0d79d.min.css">
       
         
-        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.fb2fffe2.min.css">
       
       
 
@@ -843,6 +843,17 @@
   
     <nav class="md-nav" aria-label="Importer Implementation">
       <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#edfd-and-bdfd-files-with-gaps" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        EDF+D and BDF+D files with gaps
+      
+    </span>
+  </a>
+  
+</li>
         
           <li class="md-nav__item">
   <a href="#tolerant-fallback-for-non-compliant-but-readable-files" class="md-nav__link">
@@ -2763,6 +2774,17 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
+  <a href="#edfd-and-bdfd-files-with-gaps" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        EDF+D and BDF+D files with gaps
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#tolerant-fallback-for-non-compliant-but-readable-files" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2915,6 +2937,19 @@
 <li>Convert channel information to biosigIO's format</li>
 <li>Read EDF+/BDF+ annotations into the <code>events</code> DataFrame</li>
 </ol>
+<h3 id="edfd-and-bdfd-files-with-gaps">EDF+D and BDF+D files with gaps<a class="headerlink" href="#edfd-and-bdfd-files-with-gaps" title="Permanent link">&para;</a></h3>
+<p>An EDF+D or BDF+D file gives every data record its own start time, and the records need not be contiguous.
+MNE-Python concatenates them, which would put every sample after a gap earlier on the time axis than it was recorded while the annotations keep their true times (issue #180).
+So biosigIO reads the time-keeping annotation of every record itself, whenever the header's reserved field says EDF+D or BDF+D, and compares each record's start with the end of the one before it.
+The tolerance is 1 microsecond at least, more when the onsets are written with few decimals (their rounding), and never more than half a sample period.
+An onset written with a run of signs is read with the last sign winning, so <code>+-0.001</code> (as 342 NEMAR files write their first record) is -0.001 s.</p>
+<ul>
+<li>A gap, an overlap or a record out of order raises <code>DiscontinuousRecordingError</code> (code <code>discontinuous_recording</code>, a <code>FileReadError</code>) naming the file and every gap as <code>(start, length)</code> seconds on the file's own time axis, in its <code>gaps</code> attribute.
+  The in-memory importer and <code>stream_to_zarr</code> both raise it, before MNE is touched, so the MNE-backed fallback is not needed to get the error.</li>
+<li>A file labeled discontinuous whose records are contiguous is read as above and flagged <code>edf_discontinuous_verified_contiguous</code>.</li>
+<li>A time-keeping annotation that cannot be read raises <code>FileReadError</code>, since continuity cannot be shown.</li>
+</ul>
+<p>Converting a gapped recording is not supported yet; it waits for a gap-aware design.</p>
 <h3 id="tolerant-fallback-for-non-compliant-but-readable-files">Tolerant fallback for non-compliant-but-readable files<a class="headerlink" href="#tolerant-fallback-for-non-compliant-but-readable-files" title="Permanent link">&para;</a></h3>
 <p><code>pyedflib</code>'s compliance checker rejects some real-world EDF/BDF files outright
 even though the data is byte-intact and other tools (MNE-Python) read them
@@ -2924,7 +2959,7 @@ discarding the recording:</p>
 <li>a channel with <code>physical_min == physical_max</code> (a reference electrode in a
   referential montage, constant by construction; issue #109)</li>
 <li>a numeric header field padded with NUL bytes instead of ASCII spaces</li>
-<li>a file correctly marked EDF+D (discontinuous)</li>
+<li>a file correctly marked EDF+D (discontinuous), but only when its data records are in fact contiguous; see <a href="#edfd-and-bdfd-files-with-gaps">EDF+D and BDF+D files with gaps</a></li>
 </ul>
 <p>A fourth, a late first time-keeping onset, is recovered by <code>pyedflib</code> itself and needs no MNE; see <a href="#late-first-time-keeping-onset">Late first time-keeping onset</a>.</p>
 <p>When one of these three is detected, biosigIO re-reads the file through MNE and
@@ -2951,6 +2986,7 @@ other channel, preserving the same unit-parity guarantee for it too.</p>
   <code>discontinuous_datarecords</code>, <code>late_timekeeping_onset</code>)</li>
 <li>each affected channel additionally carries <code>degenerate_physical_range: True</code></li>
 </ul>
+<p>A read of a file labeled EDF+D or BDF+D whose data records were checked and found contiguous also sets <code>edf_discontinuous_verified_contiguous</code> (<code>True</code>).</p>
 <p>A genuinely truncated or corrupt file is unaffected by this: only the four
 conditions are treated as recoverable, and a size check runs before any
 recovery attempt so a file that is <em>also</em> truncated still raises
@@ -3136,11 +3172,118 @@ MNE's order is not guaranteed, so the two can differ in that case.</p>
     
       
       
-      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.instant", "navigation.tracking", "navigation.expand", "navigation.indexes", "content.code.copy", "content.code.annotate"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": {"default": "latest", "provider": "mike"}}</script>
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.instant", "navigation.tracking", "navigation.expand", "navigation.indexes", "content.code.copy", "content.code.annotate"], "search": "../../assets/javascripts/workers/search.a7633da7.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": {"default": "latest", "provider": "mike"}}</script>
     
     
-      <script src="../../assets/javascripts/bundle.d7400e89.min.js"></script>
+      <script src="../../assets/javascripts/bundle.a5f9d56c.min.js"></script>
       
     
-  </body>
+  <script data-mkdocs-jupyter-mathjax="{&quot;url&quot;: &quot;https://cdn.jsdelivr.net/npm/mathjax@4.1.3/tex-mml-chtml.js&quot;, &quot;version&quot;: 4}">
+/* Shared by full pages and Material's instant navigation. */
+(() => {
+  const config = JSON.parse(document.currentScript.dataset.mkdocsJupyterMathjax);
+  if (window.mkdocsJupyterMathJax) return;
+
+  let loading;
+  let queue = Promise.resolve();
+  let previous = [];
+
+  const ready = async () => {
+    if (!loading) {
+      loading = (async () => {
+        let math = window.MathJax;
+        if (!math?.typesetPromise) {
+          const url = new URL(config.url, document.baseURI).href;
+          const existing = Array.from(document.scripts).find(script =>
+            script.src && (script.src === url || script.id === 'MathJax-script' ||
+              (/mathjax/i.test(script.src) &&
+               /\/(?:MathJax|latest|(?:tex|mml)(?:-mml)?-(?:chtml|svg))\.js(?:[?#]|$)/i.test(script.src))));
+          if (existing) {
+            if (!math?.startup?.promise) {
+              await new Promise((resolve, reject) => {
+                existing.addEventListener('load', resolve, { once: true });
+                existing.addEventListener('error', reject, { once: true });
+              });
+            }
+          } else {
+            // Keep site macros, delimiters and startup hooks when supplied.
+            const options = math || {};
+            window.MathJax = {
+              ...options,
+              loader: {
+                ...options.loader,
+                load: Array.from(new Set(['ui/safe', ...(options.loader?.load || [])]))
+              },
+              startup: { typeset: false, ...options.startup },
+              tex: {
+                tags: 'ams',
+                useLabelIds: true,
+                inlineMath: [['$', '$'], ['\\(', '\\)']],
+                displayMath: [['$$', '$$'], ['\\[', '\\]']],
+                processEscapes: true,
+                processEnvironments: true,
+                ...options.tex
+              }
+            };
+            await new Promise((resolve, reject) => {
+              const script = document.createElement('script');
+              script.src = config.url;
+              script.id = 'MathJax-script';
+              script.async = true;
+              script.onload = resolve;
+              script.onerror = reject;
+              document.head.appendChild(script);
+            });
+          }
+        }
+        math = window.MathJax;
+        await math.startup.promise;
+        return math;
+      })();
+    }
+    const math = await loading;
+    // A site owner can extend the v3 queue again on each navigation.
+    await math.startup.promise;
+    return math;
+  };
+
+  const unrendered = node => {
+    if (node.matches('mjx-container')) return [];
+    if (!node.querySelector('mjx-container')) return [node];
+    // In v3, scanning generated assistive MathML again produces nested output.
+    return Array.from(node.children).flatMap(unrendered);
+  };
+
+  const refresh = () => {
+    // A separate chain also serializes v3, without changing v4's startup promise.
+    queue = queue.then(async () => {
+      const notebooks = Array.from(document.querySelectorAll('.jupyter-wrapper'));
+      if (!notebooks.length && !previous.length) return;
+      if (notebooks.length === previous.length &&
+          notebooks.every((node, index) => node === previous[index])) return;
+      const math = await ready();
+      if (previous.length) {
+        math.typesetClear(previous);
+        math.texReset();
+      }
+      previous = notebooks.filter(node => node.isConnected);
+      const pending = previous.flatMap(unrendered);
+      if (pending.length) await math.typesetPromise(pending);
+    }).catch(error => console.error('mkdocs-jupyter: MathJax rendering failed', error));
+    return queue;
+  };
+
+  window.mkdocsJupyterMathJax = { refresh };
+  const start = () => {
+    if (typeof document$ !== 'undefined') document$.subscribe(refresh);
+    else refresh();
+  };
+  // Theme bundles and user-provided MathJax scripts can follow notebook content.
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', start, { once: true });
+  } else start();
+})();
+
+</script>
+</body>
 </html>
