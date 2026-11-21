@@ -59,7 +59,9 @@ The EDF importer in biosigIO (`biosigio.importers.edf`) uses the `pyedflib` pack
 
 An EDF+D or BDF+D file gives every data record its own start time, and the records need not be contiguous.
 MNE-Python concatenates them, which would put every sample after a gap earlier on the time axis than it was recorded while the annotations keep their true times (issue #180).
-So biosigIO reads the time-keeping annotation of every record itself, whenever the header's reserved field says EDF+D or BDF+D, and compares each record's start with the end of the one before it (tolerance 1 microsecond).
+So biosigIO reads the time-keeping annotation of every record itself, whenever the header's reserved field says EDF+D or BDF+D, and compares each record's start with the end of the one before it.
+The tolerance is 1 microsecond at least, more when the onsets are written with few decimals (their rounding), and never more than half a sample period.
+An onset written with a run of signs is read with the last sign winning, so `+-0.001` (as 342 NEMAR files write their first record) is -0.001 s.
 
 - A gap, an overlap or a record out of order raises `DiscontinuousRecordingError` (code `discontinuous_recording`, a `FileReadError`) naming the file and every gap as `(start, length)` seconds on the file's own time axis, in its `gaps` attribute.
   The in-memory importer and `stream_to_zarr` both raise it, before MNE is touched, so the MNE-backed fallback is not needed to get the error.

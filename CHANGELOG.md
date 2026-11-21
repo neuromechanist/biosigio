@@ -18,6 +18,7 @@ which keep the full notes; releases older than 1.1.0 are listed there only.
   The tolerant fallback concatenated the data records through MNE, which ignores the discontinuity, so every sample after a gap landed earlier than it was recorded while annotations kept their true times.
   When the reserved field says EDF+D or BDF+D, biosigIO now reads each record's time-keeping annotation itself and raises `DiscontinuousRecordingError` (code `discontinuous_recording`) naming the file and each gap, from both the importer and `stream_to_zarr`.
   A +D file whose records are contiguous is still read and sets `edf_discontinuous_verified_contiguous`.
+  The check allows for the rounding of onsets written with few decimals, and reads `+-0.001` as -0.001 s.
   Converting a gapped file waits for a gap-aware design.
 
 - EDF and BDF export reads back within half a least significant bit (LSB) of the given values, with the LSB taken from the header as stored: `(physical_max - physical_min) / (digital_max - digital_min)` (#170).
