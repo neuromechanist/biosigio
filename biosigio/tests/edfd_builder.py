@@ -38,14 +38,27 @@ def _field(text: str, width: int) -> bytes:
     return raw.ljust(width, b" ")
 
 
+def _numeric(onset: float | str) -> float:
+    """The seconds an onset means; text is read as a run of signs, the last one wins."""
+    if isinstance(onset, str):
+        sign = -1.0 if onset.rstrip("0123456789.")[-1:] == "-" else 1.0
+        try:
+            return sign * float(onset.lstrip("+-"))
+        except ValueError:  # deliberately malformed onset text: the ramp just starts at 0
+            return 0.0
+    return float(onset)
+
+
 def write_edf_plus(
     path: str | Path,
-    onsets: Sequence[float],
+    onsets: Sequence[float | str],
     *,
     label: str = "D",
     bdf: bool = False,
     record_duration: float = 1.0,
     extra_annotations: Mapping[int, tuple[float, str]] | None = None,
+    onset_format: str = ".12g",
+    second_annotation_onsets: Sequence[float] | None = None,
 ) -> Path:
     """Write an EDF+ (or BDF+) file whose data records start at ``onsets`` seconds.
 
@@ -54,6 +67,13 @@ def write_edf_plus(
     whose onsets happen to be contiguous (or a ``"C"`` file whose onsets are not) can
     be made on purpose. ``extra_annotations`` maps a record index to one
     ``(onset, text)`` annotation written after that record's time-keeping TAL.
+
+    An onset is written as ``+`` plus its number formatted with ``onset_format``; an
+    onset given as text is written verbatim instead (``"+-0.001"`` is how some real
+    acquisition software writes -0.001 s). With ``second_annotation_onsets`` the file
+    has a second annotations signal whose records open with a TAL at those onsets: EDF+
+    keeps the time-keeping TAL in the FIRST annotations signal only, so a reader that
+    looks at the second one sees these values instead.
     """
     spec = _BDF if bdf else _EDF
     width = spec["width"]
@@ -61,49 +81,60 @@ def write_edf_plus(
     samples = int(round(FS * record_duration))
     ann_label = "BDF Annotations" if bdf else "EDF Annotations"
     plus = "BDF+" if bdf else "EDF+"
+    n_signals = 2 if second_annotation_onsets is None else 3
     # BDF's first header byte is 0xFF, then "BIOSEMI"; EDF's version is "0".
     version = b"\xffBIOSEMI" if bdf else _field("0", 8)
 
+    def onset_text(onset: float | str) -> bytes:
+        return (onset if isinstance(onset, str) else f"+{onset:{onset_format}}").encode("ascii")
+
+    header_bytes = 256 * (n_signals + 1)
     header = version + _field("X X X X", 80) + _field("Startdate 01-JAN-2020 X X X", 80)
-    header += _field("01.01.20", 8) + _field("12.00.00", 8) + _field(str(256 * 3), 8)
+    header += _field("01.01.20", 8) + _field("12.00.00", 8) + _field(str(header_bytes), 8)
     header += _field(plus + label, 44) + _field(str(n_records), 8)
-    header += _field(f"{record_duration:.6g}", 8) + _field("2", 4)
+    header += _field(f"{record_duration:.6g}", 8) + _field(str(n_signals), 4)
+    annotation_signal = (
+        ann_label,
+        "",
+        "",
+        "-1",
+        "1",
+        spec["dig"][0],
+        spec["dig"][1],
+        "",
+        str(ANNOTATION_SAMPLES),
+        "",
+    )
     signals = [
         ("EEG Ramp", "", "uV", *spec["phys"], *spec["dig"], "", str(samples), ""),
-        (
-            ann_label,
-            "",
-            "",
-            "-1",
-            "1",
-            spec["dig"][0],
-            spec["dig"][1],
-            "",
-            str(ANNOTATION_SAMPLES),
-            "",
-        ),
+        annotation_signal,
     ]
+    if second_annotation_onsets is not None:
+        signals.append(annotation_signal)
     widths = [16, 80, 8, 8, 8, 8, 8, 80, 8, 32]
     for column in range(10):
         for signal in signals:
             header += _field(signal[column], widths[column])
-    assert len(header) == 256 * 3
+    assert len(header) == header_bytes
 
     body = b""
+    space = width * ANNOTATION_SAMPLES
     for index, onset in enumerate(onsets):
-        true_time = onset + np.arange(samples) / FS
+        true_time = _numeric(onset) + np.arange(samples) / FS
         digits = np.round(true_time * spec["scale"]).astype(np.int64)
         if bdf:
             body += b"".join(int(v).to_bytes(3, "little", signed=True) for v in digits)
         else:
             body += digits.astype("<i2").tobytes()
-        tal = f"+{onset:.12g}".encode() + b"\x14\x14\x00"  # the time-keeping TAL
+        tal = onset_text(onset) + b"\x14\x14\x00"  # the time-keeping TAL
         if extra_annotations and index in extra_annotations:
             at, text = extra_annotations[index]
             tal += f"+{at:.12g}".encode() + b"\x14" + text.encode() + b"\x14\x00"
-        space = width * ANNOTATION_SAMPLES
         assert len(tal) <= space
         body += tal.ljust(space, b"\x00")
+        if second_annotation_onsets is not None:
+            other = onset_text(second_annotation_onsets[index]) + b"\x14\x14\x00"
+            body += other.ljust(space, b"\x00")
 
     Path(path).write_bytes(header + body)
     return Path(path)

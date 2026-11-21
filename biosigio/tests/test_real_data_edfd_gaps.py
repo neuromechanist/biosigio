@@ -14,6 +14,11 @@ is patched afterwards (to 6), so the excerpt is a valid file.
   and ends at 8362.542969 s, and record 4181 starts at 8396.445312 s, 33.902343 s later.
 * Records 4170 to 4175 are contiguous, a real EDF+D control that must stay readable.
 
+A second control, NEMAR ``on006233`` v1.0.0 (``sub-046``, ses-4, ieeg; EDF+D, 5 signals,
+1 s records), covers the way 342 files in ``on006233`` and ``on006914`` write the first
+record's time-keeping onset, ``+-0.001``, which is -0.001 s and followed by 0.999 s. Its
+header and first four records are fetched the same way.
+
 Nothing is committed. Set ``BIOSIGIO_REAL_DATA=1`` to opt in; without it, or offline, the
 tests skip, so the default suite stays offline::
 
@@ -55,19 +60,30 @@ GAP_START_S = 8362.542969
 GAP_LENGTH_S = 33.902343
 
 
-def _excerpt(name: str, first_record: int, sha256: str, tmp_path: Path) -> str:
-    """A valid private copy of the excerpt: header plus six records, record count patched."""
-    start = HEADER_BYTES + first_record * RECORD_BYTES
+def _excerpt(
+    name: str,
+    first_record: int,
+    sha256: str,
+    tmp_path: Path,
+    *,
+    url: str = URL,
+    header_bytes: int = HEADER_BYTES,
+    record_bytes: int = RECORD_BYTES,
+    n_records: int = N_RECORDS,
+    header_sha256: str = HEADER_SHA256,
+) -> str:
+    """A valid private copy of the excerpt: header plus records, record count patched."""
+    start = header_bytes + first_record * record_bytes
     cached = fetch_real_byte_ranges(
-        URL,
-        [(0, HEADER_BYTES - 1), (start, start + N_RECORDS * RECORD_BYTES - 1)],
+        url,
+        [(0, header_bytes - 1), (start, start + n_records * record_bytes - 1)],
         filename=name,
         sha256=sha256,
     )
     data = bytearray(cached.read_bytes())
-    assert hashlib.sha256(data[:HEADER_BYTES]).hexdigest() == HEADER_SHA256
+    assert hashlib.sha256(data[:header_bytes]).hexdigest() == header_sha256
     assert data[192:197] == b"EDF+D"
-    data[236:244] = f"{N_RECORDS}".ljust(8).encode("ascii")
+    data[236:244] = f"{n_records}".ljust(8).encode("ascii")
     path = tmp_path / name
     path.write_bytes(data)
     return str(path)
@@ -87,6 +103,26 @@ def contiguous(tmp_path) -> str:
         CONTIGUOUS_EXCERPT_FIRST_RECORD,
         CONTIGUOUS_EXCERPT_SHA256,
         tmp_path,
+    )
+
+
+SIGNED_ZERO_URL = (
+    "https://data.nemar.org/on006233/v1.0.0/sub-046/ses-4/ieeg/sub-046_ses-4_task-picture_ieeg.edf"
+)
+
+
+@pytest.fixture
+def signed_zero(tmp_path) -> str:
+    return _excerpt(
+        "on006233_sub046_signed_zero.edf",
+        0,
+        "f8df8a0d22d16e6a821a33078ee0348c7435b1efce7ff0e00a65f96f51de6d53",
+        tmp_path,
+        url=SIGNED_ZERO_URL,
+        header_bytes=1536,
+        record_bytes=10_000,
+        n_records=4,
+        header_sha256="88d0cacba33d25ccb139fbef8176001311ca9299d8b1bff85dbb7b144b138f51",
     )
 
 
@@ -124,4 +160,17 @@ def test_streaming_export_reads_the_real_contiguous_edfd_file(contiguous, tmp_pa
     store = stream_to_zarr(contiguous, str(tmp_path / "store.zarr"))
     metadata = zarr.open(store, mode="r").attrs["recording_metadata"]
     assert metadata["edf_tolerant_read"] is True
+    assert metadata["edf_discontinuous_verified_contiguous"] is True
+
+
+def test_real_signed_zero_first_onset_is_read_not_refused(signed_zero):
+    assert b"+-0.001" in Path(signed_zero).read_bytes()
+    rec = Recording.from_file(signed_zero, importer="edf")
+    assert rec.metadata["edf_discontinuous_verified_contiguous"] is True
+    assert rec.metadata["file_duration"] == pytest.approx(4.0)
+
+
+def test_real_signed_zero_first_onset_streams(signed_zero, tmp_path):
+    store = stream_to_zarr(signed_zero, str(tmp_path / "store.zarr"))
+    metadata = zarr.open(store, mode="r").attrs["recording_metadata"]
     assert metadata["edf_discontinuous_verified_contiguous"] is True
