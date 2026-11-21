@@ -190,3 +190,81 @@ def fetch_real_recording(
         )
 
     return dest
+
+
+def fetch_real_byte_ranges(
+    url: str,
+    ranges: list[tuple[int, int]],
+    *,
+    filename: str,
+    sha256: str | None = None,
+) -> Path:
+    """Return a local path to the concatenation of byte ``ranges`` of ``url``,
+    fetched with HTTP Range requests into the shared cache on first use.
+
+    For a recording too large to download whole (hundreds of MB) when a test only
+    needs its header and a few records: the excerpt is real bytes of the real file.
+    Same opt-in, cache, User-Agent and skip policy as :func:`fetch_real_recording`
+    (``BIOSIGIO_REAL_DATA`` unset, offline, a server that ignores ``Range``, a short
+    read or a digest mismatch all ``pytest.skip``).
+
+    Args:
+        url: Direct HTTPS URL to the file.
+        ranges: ``(first_byte, last_byte)`` pairs, both inclusive, in the order they
+            are laid end to end in the excerpt.
+        filename: Cache filename of the excerpt (the URL's own name would collide
+            with a whole-file download of the same URL).
+        sha256: Expected digest of the whole excerpt, verified on every call.
+    """
+    if not os.environ.get(ENV_VAR):
+        pytest.skip(
+            f"real-data test skipped: set {ENV_VAR}=1 to opt in "
+            "(downloads part of a real recording from the network)"
+        )
+    expected = sum(last - first + 1 for first, last in ranges)
+    dest_dir = cache_dir()
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    dest = dest_dir / filename
+
+    if dest.exists() and dest.stat().st_size == expected:
+        mismatch = _integrity_error(dest, sha256)
+        if mismatch is None:
+            return dest
+        _discard(dest)
+        pytest.skip(
+            f"real-data test skipped: cached excerpt of {url} failed integrity check ({mismatch})"
+        )
+
+    tmp = dest.with_name(dest.name + ".part")
+    try:
+        try:
+            with open(tmp, "wb") as fh:
+                for first, last in ranges:
+                    request = urllib.request.Request(
+                        url,
+                        headers={"User-Agent": _USER_AGENT, "Range": f"bytes={first}-{last}"},
+                    )
+                    with urllib.request.urlopen(request, timeout=_TIMEOUT_S) as resp:
+                        if resp.status != 206:
+                            pytest.skip(
+                                f"real-data test skipped: {url} ignored the Range request "
+                                f"(HTTP {resp.status})"
+                            )
+                        body = resp.read()
+                    if len(body) != last - first + 1:
+                        pytest.skip(
+                            f"real-data test skipped: short Range read from {url} "
+                            f"({len(body)} of {last - first + 1} bytes)"
+                        )
+                    fh.write(body)
+            tmp.replace(dest)
+        except (urllib.error.URLError, http.client.HTTPException, OSError, TimeoutError) as e:
+            pytest.skip(f"real-data test skipped: could not fetch {url} ({e})")
+    finally:
+        tmp.unlink(missing_ok=True)
+
+    mismatch = _integrity_error(dest, sha256)
+    if mismatch is not None:
+        _discard(dest)
+        pytest.skip(f"real-data test skipped: excerpt of {url} failed integrity check ({mismatch})")
+    return dest
