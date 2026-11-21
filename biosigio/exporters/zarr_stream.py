@@ -233,9 +233,10 @@ class _EdfSource:
 
     Three conditions pyedflib's compliance checker rejects outright (a
     ``physical_min == physical_max`` channel, a NUL-padded numeric header field,
-    a correctly-marked-discontinuous EDF+D) are recovered the same way the
-    in-memory importer recovers them -- see ``importers._edf_tolerant`` for the
-    unit-parity rationale. That path preloads the whole recording (there is no
+    an EDF+D whose data records are verified contiguous) are recovered the same
+    way the in-memory importer recovers them -- see ``importers._edf_tolerant`` for the
+    unit-parity rationale. An EDF+D/BDF+D with a gap between records raises
+    ``DiscontinuousRecordingError`` instead (issue #180). That path preloads the whole recording (there is no
     windowed pyedflib reader for a file pyedflib itself refuses to open), so it
     trades this module's bounded-memory guarantee for correctness on these rare,
     already-exceptional files; ``read()`` still serves windows from the
