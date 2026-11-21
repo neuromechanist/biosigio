@@ -17,7 +17,11 @@ pyedflib itself, without MNE (see below):
    can hit any fixed-width numeric field). pyedflib:
    ``"... compliant (<field name>)"`` for a numeric field.
 3. **Discontinuous EDF+D** -- the file is correctly marked discontinuous.
-   pyedflib: ``"The file is discontinuous and cannot be read"``.
+   pyedflib: ``"The file is discontinuous and cannot be read"``. It is read here only
+   when its data records are verified contiguous (:func:`verify_records_contiguous`);
+   one with a gap raises :class:`~biosigio.exceptions.DiscontinuousRecordingError`
+   instead, because MNE would put every sample after the gap at the wrong time
+   (issue #180).
 4. **Late first time-keeping onset** (issue #145): an EDF+C/BDF+C recording cut
    out of a longer session at a data-record boundary, so the first record's
    time-keeping onset is 1 s or more instead of 0. EDFlib refuses it with the
@@ -117,10 +121,8 @@ LATE_TIMEKEEPING_ONSET = "late_timekeeping_onset"
 # file whose data records were checked and found contiguous (see
 # `verify_records_contiguous`).
 DISCONTINUOUS_VERIFIED_CONTIGUOUS_KEY = "edf_discontinuous_verified_contiguous"
-# How far a record's time-keeping onset may differ from the previous record's end
-# before the pair counts as a gap. TAL onsets are decimal text with at most a few
-# digits, so a real contiguous file agrees to far better than this; one microsecond
-# is a small fraction of a sample at any rate a physiological recording uses.
+# The least a record's time-keeping onset may differ from the previous record's end
+# before the pair counts as a gap (see `_pair_tolerance` for what it is raised to).
 RECORD_ONSET_TOLERANCE_S = Decimal("1e-6")
 
 # Labels of the EDF+/BDF+ annotations (TAL) channel, which MNE (like pyedflib)
@@ -296,7 +298,15 @@ def probe_edf_header(filepath: str) -> EdfHeaderProbe:
 
 
 def _bytes_per_sample(filepath: str) -> int:
-    return 3 if filepath.lower().endswith(".bdf") else 2
+    """3 for a BDF/BDF+ file, 2 for EDF/EDF+, decided by the header, not the file name.
+
+    A BDF file's first header byte is 0xFF (then ``BIOSEMI``), and a BDF+ file's reserved
+    field starts with ``BDF+``; either is enough, so a BDF file named ``.edf`` (or the
+    reverse) is still laid out correctly.
+    """
+    with open(filepath, "rb") as f:
+        head = f.read(_MAIN_HEADER_BYTES)
+    return 3 if head[:1] == b"\xff" or head[_RESERVED_AT].upper().startswith(b"BDF+") else 2
 
 
 def _check_not_truncated(filepath: str, probe: EdfHeaderProbe, n_records: int) -> None:
@@ -357,23 +367,72 @@ def _annotation_span(probe: EdfHeaderProbe, bytes_per_sample: int) -> tuple[int,
     return span[0], span[1], offset
 
 
+# A time-keeping onset as written by real acquisition software, read more leniently
+# than EDFlib reads it: a run of signs is accepted and the LAST one wins, so the
+# ``+-0.001`` that 342 NEMAR files (on006233, on006914) carry in record 0 is -0.001 s.
+# Used only to check continuity; the late-onset code above keeps EDFlib's own rule.
+_LENIENT_ONSET = re.compile(rb"([+-]+)([0-9]+)(?:\.([0-9]+))?")
+
+
+def _lenient_timekeeping_onset(block: bytes) -> tuple[int, int] | None:
+    """The time-keeping onset opening an annotation block, as ``(units, digits)``, or ``None``.
+
+    ``units`` is the onset as an integer count of ``10**-digits`` seconds. The onset
+    ends at the first 0x14, a second 0x14 must follow at once (a time-keeping TAL has
+    no duration and no text), and the text in front must be signs, digits and at most
+    one decimal point.
+    """
+    end = block.find(b"\x14")
+    if end < 0 or block[end + 1 : end + 2] != b"\x14":
+        return None
+    match = _LENIENT_ONSET.fullmatch(block, 0, end)
+    if match is None:
+        return None
+    signs, whole, fraction = match.groups()
+    units = int(whole + (fraction or b""))
+    return (-units if signs[-1:] == b"-" else units), len(fraction or b"")
+
+
+def _pair_tolerance(digits_a: int, digits_b: int, half_sample: Decimal | None) -> Decimal:
+    """How far two consecutive record onsets may be from exactly one record apart.
+
+    Each onset is decimal text rounded to its digits, so the difference of two is off
+    by up to ``10**-min(digits)``: three-decimal onsets of non-round record durations
+    are not exact. The floor is :data:`RECORD_ONSET_TOLERANCE_S`; the ceiling is half a
+    sample period of the fastest signal (``half_sample``), because a gap shorter than
+    that cannot move a sample to another sample.
+    """
+    tolerance = Decimal(10) ** -min(digits_a, digits_b)
+    if half_sample is not None:
+        tolerance = min(tolerance, half_sample)
+    return max(tolerance, RECORD_ONSET_TOLERANCE_S)
+
+
 def verify_records_contiguous(filepath: str, probe: EdfHeaderProbe | None = None) -> bool:
     """Whether ``filepath`` is an EDF+D/BDF+D file whose records were verified contiguous.
 
     Returns ``False`` without reading any record when the reserved field does not
     say ``EDF+D`` or ``BDF+D`` (case-insensitive, as :func:`read_edf_tolerant` treats
     the ``EDF+`` prefix). For a +D file it reads the time-keeping onset of every data
-    record from the annotations signal itself and returns ``True`` when each record
-    starts within :data:`RECORD_ONSET_TOLERANCE_S` of the end of the one before it:
-    a file labeled discontinuous whose records are in fact contiguous, which is
-    readable like any continuous one.
+    record from the first annotations signal itself and returns ``True`` when each
+    record starts where the one before it ended, within :func:`_pair_tolerance`: at
+    least :data:`RECORD_ONSET_TOLERANCE_S`, more when the onsets are written with few
+    decimals (their rounding), never more than half a sample period. A file labeled
+    discontinuous whose records are in fact contiguous is readable like any
+    continuous one.
 
-    Raises :class:`~biosigio.exceptions.DiscontinuousRecordingError` naming every
-    gap (start and length, seconds) when any record starts elsewhere, an overlap
-    or a record out of order included, and
+    Onsets are read leniently (:func:`_lenient_timekeeping_onset`): ``+-0.001`` is
+    -0.001 s, as 342 real NEMAR files write their first record. Whether the bytes
+    that follow are annotations is the reader's concern, not this check's.
+
+    Raises :class:`~biosigio.exceptions.DiscontinuousRecordingError` naming every gap
+    (start and length, seconds on the file's own time axis) when any record starts
+    elsewhere, an overlap or a record out of order included, and
     :class:`~biosigio.exceptions.FileReadError` when a record's time-keeping onset
-    cannot be read, since continuity cannot be shown then. A header count of ``-1``
-    ("still recording") is replaced by what the file size holds.
+    cannot be read or the records hold no samples, since continuity cannot be shown
+    then. A header count of ``-1`` ("still recording") is replaced by what the file
+    size holds. The width of a sample (2 or 3 bytes) comes from the header, not the
+    file name.
     """
     from ..exceptions import DiscontinuousRecordingError, FileReadError, TimeGap
 
@@ -383,30 +442,45 @@ def verify_records_contiguous(filepath: str, probe: EdfHeaderProbe | None = None
         return False
 
     offset, width, record_bytes = _annotation_span(probe, _bytes_per_sample(filepath))
+    if record_bytes <= 0:
+        raise FileReadError(
+            f"{filepath}: this EDF+D/BDF+D file's data records hold no samples, so "
+            "it cannot be shown to be contiguous"
+        )
     n_records = probe.number_of_datarecords
     if n_records < 0:
         n_records = max(0, (os.path.getsize(filepath) - probe.header_bytes) // record_bytes)
     duration = Decimal(repr(probe.duration_of_data_record))
+    fastest = max(
+        (
+            ch["samples_per_record"]
+            for ch in probe.channels
+            if ch["label"] not in _ANNOTATION_LABELS
+        ),
+        default=0,
+    )
+    half_sample = duration / (2 * fastest) if fastest > 0 and duration > 0 else None
 
     onsets: list[Decimal] = []
+    digits: list[int] = []
     with open(filepath, "rb") as f:
         for index in range(n_records):
             f.seek(probe.header_bytes + index * record_bytes + offset)
-            block = f.read(width)
-            keeping = _first_timekeeping_onset(block)
+            keeping = _lenient_timekeeping_onset(f.read(width))
             if keeping is None:
                 raise FileReadError(
                     f"{filepath}: data record {index} has no readable time-keeping "
                     "annotation, so this EDF+D/BDF+D file cannot be shown to be contiguous"
                 )
-            units, digits = keeping
-            onsets.append(Decimal(units).scaleb(-digits))
+            units, places = keeping
+            onsets.append(Decimal(units).scaleb(-places))
+            digits.append(places)
 
     gaps = []
-    for before, after in zip(onsets, onsets[1:], strict=False):
-        length = after - before - duration
-        if abs(length) > RECORD_ONSET_TOLERANCE_S:
-            gaps.append(TimeGap(float(before + duration), float(length)))
+    for i in range(len(onsets) - 1):
+        length = onsets[i + 1] - onsets[i] - duration
+        if abs(length) > _pair_tolerance(digits[i], digits[i + 1], half_sample):
+            gaps.append(TimeGap(float(onsets[i] + duration), float(length)))
     if gaps:
         raise DiscontinuousRecordingError(filepath, gaps, float(duration))
     return True

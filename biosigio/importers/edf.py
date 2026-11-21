@@ -274,8 +274,11 @@ class EDFImporter(BaseImporter):
         pyedflib-equivalent physical units (see ``_edf_tolerant`` for the full
         rationale and the unit-parity proof): a channel with
         ``physical_min == physical_max`` (issue #109), a numeric header field
-        padded with NUL bytes instead of spaces, and a file correctly marked
-        EDF+D (discontinuous). A fourth, an EDF+C/BDF+C recording cut out of a
+        padded with NUL bytes instead of spaces, and a file marked EDF+D
+        (discontinuous) whose data records are verified contiguous. An EDF+D/BDF+D
+        file with a gap between records is refused with
+        :class:`~biosigio.exceptions.DiscontinuousRecordingError` (issue #180).
+        A fourth, an EDF+C/BDF+C recording cut out of a
         longer session whose first time-keeping onset is 1 s or more (issue
         #145), is read by pyedflib itself with its annotation walk switched off,
         after a TAL-only copy proves that is the file's only defect: no MNE, and

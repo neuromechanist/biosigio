@@ -94,12 +94,18 @@ class DiscontinuousRecordingError(FileReadError):
         more = len(self.gaps) - _GAPS_IN_MESSAGE
         if more > 0:
             shown += f", and {more} more"
+        noun = "gap or overlap" if len(self.gaps) == 1 else "gaps or overlaps"
         super().__init__(
-            f"{filepath}: this EDF+D/BDF+D file has {len(self.gaps)} discontinuity(ies) "
-            f"between data records ({shown}), so its samples do not lie on one continuous "
-            "time axis. biosigIO cannot convert a gapped recording yet and refuses it "
-            "rather than place samples at the wrong time."
+            f"{filepath}: this EDF+D/BDF+D file has {len(self.gaps)} {noun} between data "
+            f"records (length at start, in seconds on the file's own time axis: {shown}), so "
+            "its samples do not lie on one continuous time axis. biosigIO cannot convert a "
+            "gapped recording yet and refuses it rather than place samples at the wrong time."
         )
+
+    def __reduce__(self):
+        # BaseException pickles ``self.args`` (the message), which this constructor
+        # does not accept, so rebuild from the constructor arguments instead.
+        return (type(self), (self.filepath, self.gaps, self.record_duration))
 
 
 class CorruptFileError(FileReadError):
